@@ -1,0 +1,104 @@
+name: Build D4AI Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "android/**"
+      - "package.json"
+      - "capacitor.config.ts"
+      - ".github/workflows/build-android-apk.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Assemble Debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build web assets (bundled into app)
+        run: npm run build
+
+      - name: Add Android platform if missing
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Apply Android permissions + cleartext
+        run: |
+          set -euo pipefail
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if [ -f "$MANIFEST" ]; then
+            # Ensure INTERNET + RECORD_AUDIO etc.
+            for perm in INTERNET ACCESS_NETWORK_STATE RECORD_AUDIO MODIFY_AUDIO_SETTINGS CAMERA READ_MEDIA_IMAGES READ_MEDIA_AUDIO VIBRATE POST_NOTIFICATIONS; do
+              if ! grep -q "android.permission.$perm" "$MANIFEST"; then
+                sed -i "s|<manifest |<manifest |\n    <uses-permission android:name=\"android.permission.$perm\" />\n|" "$MANIFEST" || true
+              fi
+            done
+            if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
+              sed -i 's/<application /<application android:usesCleartextTraffic="true" /' "$MANIFEST" || true
+            fi
+            if ! grep -q "networkSecurityConfig" "$MANIFEST"; then
+              sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" /' "$MANIFEST" || true
+            fi
+          fi
+          mkdir -p android/app/src/main/res/xml
+          cp android-config/network_security_config.xml android/app/src/main/res/xml/network_security_config.xml
+          # Splash colors
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/styles_d4ai.xml << 'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+    <item name="android:background">#050b18</item>
+    <item name="windowSplashScreenBackground">#050b18</item>
+    <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+  </style>
+</resources>
+XML
+
+      - name: Build APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: D4AI-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Release APK on tag-style push
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: D4AI Android APK #${{ github.run_number }}
+          files: android/app/build/outputs/apk/debug/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

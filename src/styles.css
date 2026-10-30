@@ -142,3 +142,19 @@
     color: var(--color-foreground);
   }
 }
+
+/* ---- D4AI (ported app) ---- */
+:root {
+  color-scheme: dark;
+  --d4ai-bg: #050b18;
+  --d4ai-blue: #0b1a3a;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--d4ai-bg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+}

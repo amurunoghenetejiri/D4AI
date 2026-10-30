@@ -1,0 +1,20 @@
+{
+  "source": "code-archive",
+  "source_name": "D4AI-main.zip (D4AI Android assistant by D4TECH)",
+  "capabilities": [
+    {"capability": "application code", "source": "src/D4AiApp.tsx + components + libs (React SPA)", "outcome": "migrate", "status": "pending", "next_action": "Port into Lovable TanStack Start app as index route"},
+    {"capability": "database/schema", "source": "none (no DB in archive)", "outcome": "none_present", "status": "n/a", "next_action": "None"},
+    {"capability": "records", "source": "none (device localStorage only)", "outcome": "none_present", "status": "n/a", "next_action": "None"},
+    {"capability": "auth", "source": "none (standalone local app, session stub returns null)", "outcome": "none_present", "status": "n/a", "next_action": "None"},
+    {"capability": "chat backend proxy", "source": "src/api/chat.ts TanStack server route -> Flask http://147.224.179.220:5000/api/chat", "outcome": "migrate", "status": "pending", "next_action": "Recreate as src/routes/api/d4ai/chat.ts"},
+    {"capability": "tts backend proxy", "source": "src/api/tts.ts -> Flask /api/tts with speechSynthesis fallback", "outcome": "migrate", "status": "pending", "next_action": "Recreate as src/routes/api/d4ai/tts.ts"},
+    {"capability": "voice/live/stream routes", "source": "src/api/{voice,live,stream}.ts", "outcome": "migrate", "status": "pending", "next_action": "Recreate under src/routes/api/d4ai/"},
+    {"capability": "Capacitor Android shell", "source": "capacitor.config.ts, android/, android-config/ (splash, permissions, cleartext)", "outcome": "migrate", "status": "pending", "next_action": "Copy config + workflow; add background permissions"},
+    {"capability": "GitHub Actions APK build", "source": ".github/workflows/build-android-apk.yml", "outcome": "migrate", "status": "pending", "next_action": "Adapt to new build output; add Capacitor deps"},
+    {"capability": "branding assets", "source": "public/d4ai-avatar.* d4ai-logo.* icons", "outcome": "migrate", "status": "pending", "next_action": "Copy to public/, set favicon"},
+    {"capability": "web storage (conversations/voices/settings)", "source": "localStorage keys d4ai_*", "outcome": "preserve", "status": "pending", "next_action": "Works as-is in port"},
+    {"capability": "splash screen + app icon = D4AI robot logo", "source": "user request", "outcome": "migrate", "status": "pending", "next_action": "In-app splash overlay + favicon + manifest icons + Capacitor splash"},
+    {"capability": "AI mouth animation during voice call", "source": "user request (existing d4ai-talk-mouth CSS)", "outcome": "migrate", "status": "pending", "next_action": "Verify/fix talking-mouth wiring in call UI"}
+  ],
+  "warnings": ["Backend Flask at 147.224.179.220:5000 must be running for live answers; UI falls back gracefully otherwise"]
+}

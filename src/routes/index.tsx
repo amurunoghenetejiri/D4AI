@@ -1,24 +1,54 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ClientOnly } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
+import { D4AiSplash } from "@/components/d4ai/D4AiSplash";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+// Lazy so the browser-only app module never enters the SSR graph.
+const D4AiApp = lazy(() => import("@/components/d4ai/D4AiApp"));
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "D4AI — AI Assistant by D4TECH" },
+      {
+        name: "description",
+        content:
+          "D4AI — your AI buddy by D4TECH. Chat, 13 personality voices, voice calls, camera and files. Creating Solutions, Innovating Lives.",
+      },
+      { property: "og:title", content: "D4AI — AI Assistant by D4TECH" },
+      {
+        property: "og:description",
+        content:
+          "Chat with D4AI, talk by voice, pick from 13 personality voices. Built by D4TECH — Creating Solutions, Innovating Lives.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "D4AI — AI Assistant by D4TECH" },
+      {
+        name: "twitter:description",
+        content:
+          "Chat with D4AI, talk by voice, pick from 13 personality voices. Built by D4TECH.",
+      },
+      { name: "theme-color", content: "#0b1a3a" },
+    ],
+    links: [
+      { rel: "icon", type: "image/png", href: "/favicon.png" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <>
+      <D4AiSplash />
+      <ClientOnly fallback={null}>
+        <Suspense fallback={null}>
+          <D4AiApp />
+        </Suspense>
+      </ClientOnly>
+    </>
   );
 }
