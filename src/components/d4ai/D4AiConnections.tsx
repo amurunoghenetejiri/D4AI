@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/session";
-import { d4aiMcpTest } from "@/lib/d4ai-mcp.server";
-import { d4aiGithubVerify } from "@/lib/d4ai-github.server";
+import { d4aiMcpTest } from "@/lib/d4ai-mcp";
+import { d4aiGithubVerify } from "@/lib/d4ai-github";
 
 export function isD4AiOwner(session: SessionUser | null | undefined): boolean {
   if (!session) return false;
