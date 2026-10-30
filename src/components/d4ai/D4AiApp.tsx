@@ -144,7 +144,6 @@ async function compressImage(file: File, maxSide = 1280): Promise<string> {
 async function extractPdfText(file: File): Promise<string> {
   try {
     const pdfjs = await import("pdfjs-dist");
-    // @ts-expect-error worker
     if (pdfjs.GlobalWorkerOptions) {
       pdfjs.GlobalWorkerOptions.workerSrc = new URL(
         "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -159,7 +158,7 @@ async function extractPdfText(file: File): Promise<string> {
       const page = await doc.getPage(i);
       const tc = await page.getTextContent();
       const line = tc.items
-        .map((it) => ("str" in it ? String((it as { str: string }).str) : ""))
+        .map((it: unknown) => ("str" in it ? String((it as { str: string }).str) : ""))
         .join(" ");
       if (line.trim()) parts.push(line.trim());
     }
@@ -242,7 +241,7 @@ function loadVoicePreset(): VoicePreset {
 }
 
 function getVoiceChar(id: VoicePreset): VoiceChar {
-  return VOICE_CHARS.find((c) => c.id === id) || VOICE_CHARS.find((c) => c.id === "ceo") || VOICE_CHARS[0];
+  return VOICE_CHARS.find((c) => c.id === id) || VOICE_CHARS.find((c) => c.id === "ceo") || VOICE_CHARS[0]!;
 }
 
 function pickVoice(preset: VoicePreset): SpeechSynthesisVoice | null {
@@ -591,9 +590,9 @@ function speakText(
     let nextFetch: Promise<string | null> | null = null;
     for (let pi = 0; pi < pieces.length; pi++) {
       if (speakingCancelled || session !== speakSession) break;
-      const piece = pieces[pi];
+      const piece = pieces[pi]!;
       const obj = (await (nextFetch || fetchPiece(piece))) || null;
-      if (pi + 1 < pieces.length) nextFetch = fetchPiece(pieces[pi + 1]);
+      if (pi + 1 < pieces.length) nextFetch = fetchPiece(pieces[pi + 1]!);
       else nextFetch = null;
       if (obj) {
         await playObj(obj, piece);
@@ -678,7 +677,7 @@ function dedupeTranscript(s: string): string {
           continue;
         }
       }
-      parts.push(words[i]);
+      parts.push(words[i]!);
       i += 1;
     }
     t = parts.join(" ");
@@ -777,7 +776,7 @@ function MarkdownText({ text, dark }: { text: string; dark: boolean }) {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push({ type: "text", content: text.slice(last, m.index) });
-    parts.push({ type: "code", lang: (m[1] || "").toLowerCase(), content: m[2].replace(/\n$/, "") });
+    parts.push({ type: "code", lang: (m[1] || "").toLowerCase(), content: (m[2] ?? "").replace(/\n$/, "") });
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push({ type: "text", content: text.slice(last) });
@@ -1219,7 +1218,7 @@ function D4AiPage() {
     }
     // Always land on most recently updated chat
     const sorted = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    id = sorted[0]?.id || list[0].id;
+    id = sorted[0]?.id || list[0]!.id;
     setConversations(list);
     setActiveId(id);
     try { localStorage.setItem(ACTIVE_KEY, id); } catch {}
@@ -1302,7 +1301,7 @@ function D4AiPage() {
       persist([c], c.id);
       setTab("home");
     } else {
-      persist(list, id === activeId ? list[0].id : activeId);
+      persist(list, id === activeId ? list[0]!.id : activeId);
     }
   };
 
@@ -1419,7 +1418,7 @@ function D4AiPage() {
       // Prefer recent context; hard cap under schema max(24)
       if (history.length > 20) history = history.slice(-20);
       if (nickname && history.length) {
-        const last = history[history.length - 1];
+        const last = history[history.length - 1]!;
         if (last.role === "user") {
           last.content = `(Call me ${nickname}.)\n${last.content}`;
         }
@@ -1555,7 +1554,7 @@ function D4AiPage() {
               }
               return;
             }
-            const piece = callChunks[ci++];
+            const piece = callChunks[ci++]!;
             speakText(piece, {
               preset: voicePresetRef.current,
               append: ci > 1,
@@ -1614,7 +1613,7 @@ function D4AiPage() {
           // CRITICAL: kick off first audio IMMEDIATELY (don't wait for typewriter / full answer)
           if (doSpeak && speechChunks.length > 0) {
             unlockAudio();
-            enqueueSpeak(speechChunks[0]);
+            enqueueSpeak(speechChunks[0]!);
             speakIdx = 1;
           }
 
@@ -1637,7 +1636,7 @@ function D4AiPage() {
                   // Never block first remaining chunk longer than ~80 chars on screen
                   const gate = speakIdx === 1 ? Math.min(need, 80) : need;
                   if (i < gate) break;
-                  enqueueSpeak(speechChunks[speakIdx++]);
+                  enqueueSpeak(speechChunks[speakIdx++]!);
                 }
               }
               if (i >= full.length) {
@@ -1645,7 +1644,7 @@ function D4AiPage() {
                 typewriterRef.current = null;
                 ensureAssistant(full);
                 while (speakIdx < speechChunks.length) {
-                  enqueueSpeak(speechChunks[speakIdx++]);
+                  enqueueSpeak(speechChunks[speakIdx++]!);
                 }
                 void speakQueue.then(() => {
                   setTtsSpeaking(false);
@@ -1692,7 +1691,7 @@ function D4AiPage() {
 
   const send = useCallback(async () => {
     const text = input.trim();
-    const imgs = imageB64 ? [imageB64] : undefined;
+    const opts: { imgs?: string[]; dText?: string; dName?: string } = {};
     const dText = docText || undefined;
     const dName = docName || undefined;
     setInput("");

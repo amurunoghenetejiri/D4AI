@@ -24,7 +24,7 @@ export function isD4AiOwner(session: SessionUser | null | undefined): boolean {
   const name = String(session.fullName || "").trim().toLowerCase();
   const ownerEmails = (
     (typeof import.meta !== "undefined" &&
-      (import.meta as { env?: Record<string, string> }).env?.VITE_D4AI_OWNER_EMAILS) ||
+      (import.meta as { env?: Record<string, string> }).env?.["VITE_D4AI_OWNER_EMAILS"]) ||
     "amurundestiny@gmail.com,amurunoghenetejiri@gmail.com"
   )
     .split(",")
@@ -47,11 +47,11 @@ export type McpServerConfig = {
   id: string;
   name: string;
   url: string;
-  authToken?: string;
+  authToken?: string | undefined;
   enabled: boolean;
-  lastTestOk?: boolean;
-  lastTestAt?: number;
-  lastError?: string;
+  lastTestOk?: boolean | undefined;
+  lastTestAt?: number | undefined;
+  lastError?: string | undefined;
   tools?: { name: string; description?: string }[];
 };
 
@@ -339,7 +339,7 @@ export function D4AiConnectionsSheet({
                   <p className="text-xs text-slate-400">Connect with a real token so D4AI can change repos.</p>
                   {rows.map((c) => {
                     const Icon = c.icon;
-                    const on = c.id === "github" ? Boolean(ghLogin || apps.github) : Boolean(apps[c.id]);
+                    const on = c.id === "github" ? Boolean(ghLogin || apps["github"]) : Boolean(apps[c.id]);
                     return (
                       <div key={c.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                         <div className="flex items-start gap-3">

@@ -6,13 +6,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function voiceBase(): string {
-  const env = (process.env.VOICE_API_URL || process.env.VITE_VOICE_API_URL || "").trim();
+  const env = (process.env["VOICE_API_URL"] || process.env["VITE_VOICE_API_URL"] || "").trim();
   if (env) return env.replace(/\/$/, "");
   return "http://147.224.179.220:8000";
 }
 
 function ttsBase(): string {
-  const env = (process.env.D4AI_LIVE_URL || process.env.D4AI_CHAT_URL || "").trim();
+  const env = (process.env["D4AI_LIVE_URL"] || process.env["D4AI_CHAT_URL"] || "").trim();
   if (env) return env.replace(/\/api\/chat\/?$/, "").replace(/\/$/, "");
   return "http://147.224.179.220:5000";
 }

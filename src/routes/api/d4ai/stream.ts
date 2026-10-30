@@ -5,13 +5,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function baseUrl() {
-  return (process.env.D4AI_BASE_URL || "http://147.224.179.220:11434").replace(/\/$/, "");
+  return (process.env["D4AI_BASE_URL"] || "http://147.224.179.220:11434").replace(/\/$/, "");
 }
 function textModel() {
-  return process.env.D4AI_MODEL || "d4ai";
+  return process.env["D4AI_MODEL"] || "d4ai";
 }
 function visionModel() {
-  return process.env.D4AI_VISION_MODEL || "d4ai-vision";
+  return process.env["D4AI_VISION_MODEL"] || "d4ai-vision";
 }
 
 type Msg = { role: string; content: string };

@@ -9,7 +9,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function flaskChatUrl(): string {
-  const env = (process.env.D4AI_LIVE_URL || process.env.D4AI_CHAT_URL || "").trim();
+  const env = (process.env["D4AI_LIVE_URL"] || process.env["D4AI_CHAT_URL"] || "").trim();
   if (env) return env.replace(/\/$/, "");
   return "http://147.224.179.220:5000/api/chat";
 }

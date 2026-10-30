@@ -8,11 +8,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function liveTargets(): string[] {
-  const multi = (process.env.D4AI_LIVE_URLS || "")
+  const multi = (process.env["D4AI_LIVE_URLS"] || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const single = (process.env.D4AI_LIVE_URL || process.env.D4AI_SEARCH_URL || "").trim();
+  const single = (process.env["D4AI_LIVE_URL"] || process.env["D4AI_SEARCH_URL"] || "").trim();
   const defaults = [
     "http://147.224.179.220:5000/api/chat",
     "http://127.0.0.1:5000/api/chat",
@@ -128,7 +128,7 @@ async function wikiSearch(query: string): Promise<{ answer: string; sources: str
     const hits = sJson.query?.search || [];
     if (!hits.length) return null;
 
-    const title = hits[0].title;
+    const title = hits[0]!.title;
     const summaryUrl =
       "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
     const sumRes = await fetch(summaryUrl, {

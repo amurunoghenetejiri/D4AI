@@ -26,7 +26,6 @@ const VOICE_CFG: Record<string, { tl: string; edge: string }> = {
   nova: { tl: "en-AU", edge: "en-AU-NatashaNeural" },
   rex: { tl: "en-US", edge: "en-US-ChristopherNeural" },
   atlas: { tl: "en-GB", edge: "en-GB-RyanNeural" },
-  nova: { tl: "en", edge: "en-US-JennyNeural" },
   luna: { tl: "en-AU", edge: "en-AU-NatashaNeural" },
   cipher: { tl: "en-US", edge: "en-US-DavisNeural" },
   echo: { tl: "en-GB", edge: "en-GB-ThomasNeural" },
