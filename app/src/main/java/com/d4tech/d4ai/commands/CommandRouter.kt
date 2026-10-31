@@ -27,7 +27,7 @@ sealed class RouteResult {
 data class PendingAction(val type: String, val arg: String = "", val arg2: String = "")
 
 /**
- * Offline device-command router.
+ * Offline device-command router. Keep this file free of unresolved Git merge markers.
  * Questions (NotCommand) go to Pollinations. Commands run locally.
  */
 class CommandRouter(private val context: Context) {
