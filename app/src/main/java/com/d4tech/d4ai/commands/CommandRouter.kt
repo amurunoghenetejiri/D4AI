@@ -696,31 +696,35 @@ class CommandRouter(private val context: Context) {
     }
 
     private fun setBrightness(fraction: Float) {
+        if (!Settings.System.canWrite(context)) {
+            try {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + context.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening display settings.")
+            }
+            return
+        }
         try {
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.SCREEN_BRIGHTNESS_MODE,
-                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
-            )
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.SCREEN_BRIGHTNESS,
-                (fraction * 255).roundToInt().coerceIn(1, 255),
-            )
+            val mode = Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            val value = Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, (fraction * 255).roundToInt().coerceIn(1, 255))
+            if (!mode || !value) openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Android did not confirm the brightness change. Opening display settings.")
         } catch (_: Exception) {
-            openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "")
+            openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening display settings.")
         }
     }
 
     private fun bumpBrightness(delta: Int) {
+        if (!Settings.System.canWrite(context)) {
+            setBrightness(0.5f)
+            return
+        }
         try {
             val cur = Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
-            setBrightness(((cur + delta).coerceIn(1, 255)) / 255f)
+            setBrightness((cur + delta).coerceIn(1, 255) / 255f)
         } catch (_: Exception) {
-            openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "")
+            openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening display settings.")
         }
     }
-
     private fun setTorch(on: Boolean): String {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             return "D4AI needs Camera permission to control the flashlight. Grant it in Android app settings, then try again."
