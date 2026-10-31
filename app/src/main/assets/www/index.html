@@ -122,6 +122,9 @@ border-right:1px solid var(--line);animation:slide .2s ease}
     <div class="item" data-act="voice">📞  Voice &amp; Call</div>
     <div class="item" data-act="settings">⚙️  Settings</div>
     <div class="item" data-act="about">ℹ  About D4AI</div>
+    <div class="item" data-act="wakeon">🎙  Activate background</div>
+    <div class="item" data-act="wakeoff">⏹  Stop background</div>
+    <div class="item" data-act="enroll">👤  Enroll my voice</div>
     <div class="item" data-act="apikey">🔑  AI API key (unlimited)</div>
     <div class="sec">QUICK ACTIONS</div>
     <div class="item" data-act="clear">🗑  Clear Chat</div>
@@ -192,6 +195,9 @@ document.querySelectorAll('#drawer .item').forEach(el=>{
     if(a==='sleep'&&window.D4AI) window.D4AI.sleep();
     if(a==='assist'&&window.D4AI) window.D4AI.openAssistSettings();
     if(a==='voice'){ mic.classList.add('on'); setStatus('D4AI listening…'); if(window.D4AI) window.D4AI.listen(); }
+    if(a==='wakeon'){ if(window.D4AI&&D4AI.activateBackground) D4AI.activateBackground(); addBubble('ai','Background listening starting…'); }
+    if(a==='wakeoff'){ if(window.D4AI&&D4AI.stopBackground) D4AI.stopBackground(); addBubble('ai','Background listening stopped.'); }
+    if(a==='enroll'){ if(window.D4AI&&D4AI.openEnrollment) D4AI.openEnrollment(); }
     if(a==='apikey'){ const k=prompt('Paste Pollinations sk_ key from enter.pollinations.ai (optional, for unlimited):',''); if(k!==null && window.D4AI && window.D4AI.setApiKey) window.D4AI.setApiKey(k); addBubble('ai', k ? 'API key saved. Replies should be unlimited.' : 'Key cleared. Using free public endpoints.'); }
     if(a==='about') addBubble('ai',"I'm D4AI by D4TECH — Creating Solutions, Innovating Lives.\nCreator: Amurun Destiny O.");
     if(a==='tools') addBubble('ai','Tools: open apps, call, volume, brightness, flashlight, mute — try “open WhatsApp” or “volume up”.');

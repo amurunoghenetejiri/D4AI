@@ -41,6 +41,30 @@ class CommandRouter(private val context: Context) {
 
         // --- confirmations ---
         pending?.let { p ->
+            if (p.type == "post_open") {
+                pending = null
+                if (isNo(lower) || lower in listOf("nothing", "no thanks", "that's all", "thats all", "never mind", "nevermind")) {
+                    return RouteResult.Spoke("Okay. I'm here if you need me.")
+                }
+                // User wants something inside the app — treat as new command/question with app context
+                val app = p.arg
+                val combined = "$text (in $app)"
+                // recursive handle without post_open loop
+                return handleInAppFollowUp(app, text)
+            }
+            if (p.type == "install_game") {
+                if (isYes(lower)) {
+                    pending = null
+                    return RouteResult.Spoke(openPlayStore(p.arg))
+                }
+                if (isNo(lower)) {
+                    pending = null
+                    return RouteResult.Spoke("Okay, cancelled install.")
+                }
+                // treat as game name
+                pending = PendingAction("install_game", text.trim())
+                return RouteResult.NeedConfirm(pending!!, "Search Play Store for "${text.trim()}"? Say yes or no.")
+            }
             if (p.type == "play_music_wait") {
                 pending = null
                 if (isNo(lower) || lower.contains("anything") || lower.contains("surprise") || lower.contains("you choose") || lower.contains("nice")) {
@@ -94,6 +118,84 @@ class CommandRouter(private val context: Context) {
             )
         }
 
+
+
+        if (lower.contains("turn on wifi") || lower.contains("enable wifi") || lower == "wifi on") {
+            return RouteResult.Spoke(openWifiPanel("Turning on Wi‑Fi — use the toggle if shown."))
+        }
+        if (lower.contains("turn off wifi") || lower.contains("disable wifi") || lower == "wifi off") {
+            return RouteResult.Spoke(openWifiPanel("Turning off Wi‑Fi — use the toggle if shown."))
+        }
+        if (lower.contains("turn on bluetooth") || lower.contains("bluetooth on") || lower.contains("enable bluetooth")) {
+            return RouteResult.Spoke(openBtPanel("Opening Bluetooth — turn it on if needed."))
+        }
+        if (lower.contains("turn off bluetooth") || lower.contains("bluetooth off")) {
+            return RouteResult.Spoke(openBtPanel("Opening Bluetooth — turn it off if needed."))
+        }
+        if (lower.contains("pair") && lower.contains("bluetooth") || lower.contains("connect") && lower.contains("bluetooth")) {
+            return RouteResult.Spoke(openBtPanel("Opening Bluetooth settings to pair a device."))
+        }
+
+        // --- flashlight strict ---
+        if (lower == "flashlight on" || lower == "turn on flashlight" || lower == "turn on the flashlight" ||
+            lower == "torch on" || lower == "turn on torch"
+        ) {
+            setTorch(true)
+            return RouteResult.Spoke("Flashlight on.")
+        }
+        if (lower == "flashlight off" || lower == "turn off flashlight" || lower == "turn off the flashlight" ||
+            lower == "torch off" || lower == "turn off torch"
+        ) {
+            setTorch(false)
+            return RouteResult.Spoke("Flashlight off.")
+        }
+
+        // --- home / close apps ---
+        if (matchesAny(lower, "home", "go home", "home screen", "show home", "go to home screen")) {
+            context.startActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            return RouteResult.Spoke("Home screen.")
+        }
+        if (lower.contains("close all apps") || lower.contains("clear recent") || lower == "close apps") {
+            context.startActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            return RouteResult.Spoke(
+                "I took you home. Android doesn't allow apps to force-close every other app; swipe away recents if needed.",
+            )
+        }
+
+        // --- clear notifications ---
+        if (lower.contains("clear") && lower.contains("notification")) {
+            return RouteResult.Spoke(clearNotifications())
+        }
+
+        // --- install game / play store ---
+        if (lower.contains("install") && (lower.contains("game") || lower.contains("app") || lower.contains("play store"))) {
+            pending = PendingAction("install_game", "")
+            return RouteResult.NeedConfirm(
+                pending!!,
+                "Which game or app should I find on the Play Store?",
+            )
+        }
+
+        // --- open X and search Y ---
+        Regex("^open\s+(.+?)\s+and\s+search\s+(?:for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            val app = it.groupValues[1].trim()
+            val q = it.groupValues[2].trim()
+            openApp(app)
+            return RouteResult.Spoke(webSearch(q).replace("Searching Google", "Opened $app and searching"))
+        }
+        Regex("^open\s+google\s+and\s+search\s+(?:for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(webSearch(it.groupValues[1].trim()))
+        }
+        Regex("^search\s+(?:google\s+for\s+|for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(webSearch(it.groupValues[1].trim()))
+        }
+
         // --- music ---
         if (lower == "play music" || lower == "play some music" || lower == "play a song" ||
             lower.startsWith("play music") || lower == "music please"
@@ -125,7 +227,7 @@ class CommandRouter(private val context: Context) {
         }
 
         // bare app name: "WhatsApp", "Chrome", "d4exam", "Telegram"
-        bareAppOpen(lower)?.let { return RouteResult.Spoke(it) }
+        bareAppOpen(lower)?.let { return offerAfterOpen(it, lower) }
 
         // --- uninstall / delete app ---
         Regex("^(delete|uninstall|remove)\\s+(?:the\\s+)?(?:app\\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
@@ -833,4 +935,43 @@ class CommandRouter(private val context: Context) {
             else -> "Hello! I'm D4AI. What would you like me to do?"
         }
     }
+    private fun offerAfterOpen(result: String, appName: String): RouteResult {
+        if (result.startsWith("App not found") || result.startsWith("Couldn't") || result.startsWith("Which")) {
+            return RouteResult.Spoke(result)
+        }
+        // special prompts
+        val al = appName.lowercase()
+        val follow = when {
+            al.contains("calculator") || al.contains("calc") ->
+                "Opening calculator. What would you like me to calculate?"
+            al.contains("chrome") || al.contains("browser") ->
+                "Opening $appName. Want a new search, or should I do something else?"
+            al.contains("whatsapp") ->
+                "Opening WhatsApp. Do you want me to send a message to someone?"
+            al.contains("camera") ->
+                "Opening camera. Do you want me to help take a photo?"
+            else ->
+                "Opening $appName. Do you want me to do anything in there?"
+        }
+        // Actually perform open via result message already opened inside openApp
+        pending = PendingAction("post_open", appName)
+        // Speak the friendly follow-up (open already happened)
+        val spoken = if (result.startsWith("Opening")) follow else result
+        return RouteResult.NeedConfirm(pending!!, spoken)
+    }
+
+
+    private fun clearNotifications(): String {
+        return try {
+            // Requires NotificationListenerService bound; open settings if not
+            val i = Intent("android.settings.NOTIFICATION_LISTENER_SETTINGS")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            "Open notification access for D4AI if asked, then I can clear notifications. For now I opened the settings page."
+        } catch (e: Exception) {
+            "Couldn't open notification settings: ${e.message}"
+        }
+    }
+
+
 }

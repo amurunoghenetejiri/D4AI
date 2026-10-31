@@ -11,8 +11,14 @@ android {
         applicationId "com.d4tech.d4ai"
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName "1.1.1"
+        versionCode 5
+        versionName "1.2.0"
+        // Paste your free key from https://console.picovoice.ai if you enable Porcupine later
+        buildConfigField "String", "PICOVOICE_ACCESS_KEY", "\"\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {
@@ -35,4 +41,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // Optional: uncomment after adding Picovoice access key
+    // implementation 'ai.picovoice:porcupine-android:3.0.2'
+    // implementation 'ai.picovoice:eagle-android:1.0.0'
 }

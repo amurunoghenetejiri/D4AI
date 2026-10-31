@@ -18,6 +18,7 @@ import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
 import com.d4tech.d4ai.voice.D4AiListenService
+import com.d4tech.d4ai.VoiceEnrollmentActivity
 import com.d4tech.d4ai.voice.SpeechEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +120,7 @@ class MainActivity : AppCompatActivity() {
                                 )
                             } else {
                                 // Speak action feedback (opening WhatsApp, etc.)
+                                com.d4tech.d4ai.voice.D4AIWakeWordService.pause(this@MainActivity)
                                 speech.speak(r.message, listenAfter = false)
                                 deliver(true, r.message)
                             }
@@ -199,6 +201,46 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun setApiKey(key: String) {
             PollinationsClient.setApiKey(applicationContext, key)
+        }
+
+        
+        @JavascriptInterface
+        fun activateBackground() {
+            runOnUiThread {
+                ensurePerms()
+                // Battery optimization tip
+                try {
+                    val pm = getSystemService(android.os.PowerManager::class.java)
+                    if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    }
+                } catch (_: Exception) {
+                }
+                getSharedPreferences("d4ai", MODE_PRIVATE).edit().putBoolean("wake_on_boot", true).apply()
+                com.d4tech.d4ai.voice.D4AIWakeWordService.start(this@MainActivity)
+                speech.speak("Background listening on. Say D4AI to wake me.", listenAfter = false)
+            }
+        }
+
+        @JavascriptInterface
+        fun stopBackground() {
+            runOnUiThread {
+                com.d4tech.d4ai.voice.D4AIWakeWordService.stop(this@MainActivity)
+                getSharedPreferences("d4ai", MODE_PRIVATE).edit().putBoolean("wake_on_boot", false).apply()
+                speech.speak("Background listening off.", listenAfter = false)
+            }
+        }
+
+        @JavascriptInterface
+        fun openEnrollment() {
+            runOnUiThread {
+                startActivity(Intent(this@MainActivity, VoiceEnrollmentActivity::class.java))
+            }
         }
 
         @JavascriptInterface
