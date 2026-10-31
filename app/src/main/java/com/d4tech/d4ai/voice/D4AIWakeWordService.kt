@@ -24,31 +24,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * HOW WAKE WORKS ON ANDROID:
- * - True always-on "Hey Google" style needs on-device wake-word (Porcupine) OR the app
- *   briefly opening the mic (green indicator may flash).
- * - Many phones block Google STT when the screen is off / app is cached.
- * - RELIABLE path: tap the notification "Talk" button OR say the wake word while
- *   the screen is on and the notification is showing.
- * - Green mic dot: appears while Android grants mic to this service during a listen window.
+ * Offline Vosk wake-word + Google STT for the command.
+ * Works with screen off as long as the foreground service keeps the mic.
+ * Green mic indicator may show — required by Android 12+.
  */
 class D4AIWakeWordService : Service() {
 
-    enum class State { IDLE, ACTIVE, PAUSED, PROCESSING }
+    enum class State { LOADING, IDLE, ACTIVE, PAUSED, PROCESSING }
 
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
-    private var state = State.IDLE
+    private var vosk: VoskWakeEngine? = null
+    private var state = State.LOADING
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val greetings = listOf(
         "Yes, I'm here. What do you want me to do?",
         "Hey! I'm listening — go ahead.",
         "I'm right here. What's up?",
-        "Yo, tell me what you need.",
-        "Yes boss, I'm listening.",
+        "Yes boss, tell me.",
         "I heard you. How can I help?",
     )
 
@@ -65,9 +61,7 @@ class D4AIWakeWordService : Service() {
             onSpeakDone = {
                 main.postDelayed({
                     if (state == State.PAUSED || state == State.PROCESSING) {
-                        state = State.IDLE
-                        updateNotif("Active • Say D4AI or tap Talk")
-                        scheduleListen(700)
+                        resumeVosk()
                     }
                 }, 500)
             },
@@ -78,6 +72,11 @@ class D4AIWakeWordService : Service() {
             stopService(Intent(this, D4AiListenService::class.java))
         } catch (_: Exception) {
         }
+        vosk = VoskWakeEngine(
+            context = this,
+            onWake = { text -> main.post { onWakeWord(text) } },
+            onStatus = { msg -> main.post { updateNotif(msg) } },
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -87,110 +86,85 @@ class D4AIWakeWordService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_PAUSE -> {
-                enterPaused()
+                pauseVosk()
                 return START_STICKY
             }
             ACTION_RESUME -> {
-                state = State.IDLE
-                scheduleListen(400)
+                resumeVosk()
                 return START_STICKY
             }
             ACTION_TALK, ACTION_WAKE_NOW -> {
-                // Guaranteed path: user tapped notification
                 forceConversation()
                 return START_STICKY
             }
             else -> {
                 isRunning = true
-                startForeground(NOTIF_ID, buildNotif("Active • Say D4AI or tap Talk"))
+                startForeground(NOTIF_ID, buildNotif("D4AI starting offline wake…"))
                 acquireWakeLock()
-                state = State.IDLE
-                scheduleListen(400)
+                prepareVosk()
             }
         }
         return START_STICKY
     }
 
-    /** User tapped notification — always starts a real conversation. */
+    private fun prepareVosk() {
+        state = State.LOADING
+        updateNotif("Preparing offline wake (first time may download model)…")
+        vosk?.prepare { ok, msg ->
+            main.post {
+                if (!isRunning) return@post
+                if (ok) {
+                    state = State.IDLE
+                    updateNotif("Active • Say D4AI / D four / before AI")
+                    vosk?.start()
+                    Log.d(TAG, "Vosk started: $msg")
+                } else {
+                    updateNotif("Offline model failed — tap Talk. $msg")
+                    Log.e(TAG, "Vosk failed: $msg")
+                    // Fallback: still allow notification Talk
+                }
+            }
+        }
+    }
+
+    private fun onWakeWord(heard: String) {
+        if (state != State.IDLE) return
+        Log.d(TAG, "wake=$heard")
+        forceConversation()
+    }
+
     private fun forceConversation() {
-        main.removeCallbacks(listenRunnable)
-        acquireWakeLock()
+        pauseVosk()
         state = State.ACTIVE
         beep()
         val g = greetings.random()
         updateNotif("Listening…")
-        enterPaused()
         speech.speak(g, listenAfter = false)
         main.postDelayed({
             if (!isRunning) return@postDelayed
             state = State.ACTIVE
             startCommandListen()
-        }, 1700)
-    }
-
-    private fun scheduleListen(delay: Long) {
-        main.removeCallbacks(listenRunnable)
-        if (!isRunning) return
-        main.postDelayed(listenRunnable, delay)
-    }
-
-    private val listenRunnable = Runnable {
-        if (!isRunning || state != State.IDLE) {
-            scheduleListen(1500)
-            return@Runnable
-        }
-        if (isMusicPlaying()) {
-            scheduleListen(2000)
-            return@Runnable
-        }
-        acquireWakeLock()
-        updateNotif("Active • listening for D4AI…")
-        Log.d(TAG, "listen window")
-        speech.startListeningOnce(timeoutMs = 6000) { text ->
-            Log.d(TAG, "heard=[$text] state=$state")
-            if (!isRunning || state != State.IDLE) {
-                scheduleListen(1000)
-                return@startListeningOnce
-            }
-            if (text.isBlank()) {
-                scheduleListen(500)
-                return@startListeningOnce
-            }
-            if (isWakePhrase(text)) {
-                onWake(text)
-            } else {
-                scheduleListen(400)
-            }
-        }
-    }
-
-    private fun onWake(heard: String) {
-        Log.d(TAG, "WAKE: $heard")
-        main.removeCallbacks(listenRunnable)
-        forceConversation()
+        }, 1600)
     }
 
     private fun startCommandListen() {
-        updateNotif("Listening — speak your command")
+        updateNotif("Speak your command")
         speech.startListeningOnce(timeoutMs = 12000) { cmd ->
-            Log.d(TAG, "cmd=[$cmd]")
+            Log.d(TAG, "cmd=$cmd")
             if (cmd.isBlank()) {
-                speech.speak("I didn't catch that. Say D4AI or tap Talk on the notification.", listenAfter = false)
-                state = State.IDLE
-                updateNotif("Active • Say D4AI or tap Talk")
-                scheduleListen(1500)
+                speech.speak("Didn't catch that. Say D4AI again when you're ready.", listenAfter = false)
+                // onSpeakDone will resume vosk
+                state = State.PROCESSING
                 return@startListeningOnce
             }
             val low = cmd.lowercase()
             if (low == "stop" || low == "stop listening") {
-                speech.speak("Okay, I'll wait. Say D4AI when you need me.", listenAfter = false)
-                state = State.IDLE
-                updateNotif("Active • Say D4AI or tap Talk")
-                scheduleListen(1200)
+                speech.speak("Okay, I'll wait quietly. Say D4AI when you need me.", listenAfter = false)
+                state = State.PROCESSING
                 return@startListeningOnce
             }
             if (low == "sleep" || low.contains("go to sleep")) {
-                speech.speak("Alright, sleeping. Open the app or notification when you want me back.", listenAfter = false)
+                speech.speak("Sleeping. Activate me again from the app when you want.", listenAfter = false)
                 main.postDelayed({ stopSelfSafe() }, 1600)
                 return@startListeningOnce
             }
@@ -200,13 +174,13 @@ class D4AIWakeWordService : Service() {
 
     private fun handleCommand(text: String) {
         state = State.PROCESSING
-        enterPaused()
+        pauseVosk()
         scope.launch {
             try {
                 when (val r = router.handle(text)) {
                     is RouteResult.Spoke -> {
                         if (r.message == "__SLEEP__") {
-                            speech.speak("Sleeping. Catch you later.", listenAfter = false)
+                            speech.speak("Alright, sleeping.", listenAfter = false)
                             main.postDelayed({ stopSelfSafe() }, 1200)
                             return@launch
                         }
@@ -215,31 +189,30 @@ class D4AIWakeWordService : Service() {
                     is RouteResult.NeedConfirm -> {
                         speech.speak(humanize(r.prompt), listenAfter = false)
                         main.postDelayed({
-                            state = State.ACTIVE
                             speech.startListeningOnce(12000) { ans ->
                                 if (ans.isBlank()) {
-                                    state = State.IDLE
-                                    scheduleListen(1000)
-                                } else handleCommand(ans)
+                                    state = State.PROCESSING // resume via onSpeakDone path
+                                    resumeVosk()
+                                } else {
+                                    handleCommand(ans)
+                                }
                             }
-                        }, 1500)
+                        }, 1400)
                         return@launch
                     }
                     RouteResult.NotCommand -> {
                         val a = try {
                             PollinationsClient.ask(text)
                         } catch (_: Exception) {
-                            "Network's being slow. Try again in a second."
+                            "Network's slow right now. Try again."
                         }
                         speech.speak(a, listenAfter = false)
                     }
                 }
             } catch (_: Exception) {
-                speech.speak("Something went wrong. Try once more.", listenAfter = false)
+                speech.speak("Something went wrong. Try again.", listenAfter = false)
             }
-            state = State.IDLE
-            updateNotif("Active • Say D4AI or tap Talk")
-            main.postDelayed({ scheduleListen(2000) }, 2200)
+            // Vosk resumes in onSpeakDone
         }
     }
 
@@ -255,37 +228,28 @@ class D4AIWakeWordService : Service() {
         return msg
     }
 
-    private fun enterPaused() {
+    private fun pauseVosk() {
         state = State.PAUSED
+        vosk?.pause()
         speech.stopListening()
-        main.removeCallbacks(listenRunnable)
     }
 
-    fun pauseWakeWord() = enterPaused()
-    fun resumeWakeWord() {
+    private fun resumeVosk() {
         if (!isRunning) return
+        if (isMusicPlaying()) {
+            main.postDelayed({ resumeVosk() }, 800)
+            return
+        }
         state = State.IDLE
-        scheduleListen(600)
+        updateNotif("Active • Say D4AI / D four / before AI")
+        vosk?.resume()
+        if (vosk?.isRunning != true && vosk?.isReady == true) {
+            vosk?.start()
+        }
     }
 
-    private fun isWakePhrase(text: String): Boolean {
-        val t = text.lowercase()
-            .replace(Regex("[^a-z0-9 ]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val keys = listOf(
-            "d4ai", "d4a", "d 4 ai", "d 4 a",
-            "default ai", "default a i", "defaultay",
-            "before ai", "before a i", "befor ai", "the before ai",
-            "hey d4ai", "hey default ai", "wake d4ai",
-            "the four ai", "def or ai", "d for ai", "d4 ai",
-        )
-        if (keys.any { t == it || t.contains(it) }) return true
-        if (t.contains("before") && t.contains("ai")) return true
-        if (t.contains("default") && t.contains("ai")) return true
-        if (t.contains("d4") && t.contains("ai")) return true
-        return false
-    }
+    fun pauseWakeWord() = pauseVosk()
+    fun resumeWakeWord() = resumeVosk()
 
     private fun isMusicPlaying(): Boolean {
         return try {
@@ -307,12 +271,10 @@ class D4AIWakeWordService : Service() {
         try {
             if (wakeLock == null) {
                 val pm = getSystemService(PowerManager::class.java)
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "d4ai:wake")
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "d4ai:vosk")
                 wakeLock?.setReferenceCounted(false)
             }
-            if (wakeLock?.isHeld != true) {
-                wakeLock?.acquire(10 * 60 * 1000L)
-            }
+            if (wakeLock?.isHeld != true) wakeLock?.acquire(60 * 60 * 1000L)
         } catch (_: Exception) {
         }
     }
@@ -330,11 +292,6 @@ class D4AIWakeWordService : Service() {
     }
 
     private fun buildNotif(text: String): Notification {
-        val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        // Tapping the notification body starts conversation immediately
         val talk = PendingIntent.getService(
             this, 2,
             Intent(this, D4AIWakeWordService::class.java).setAction(ACTION_TALK),
@@ -349,7 +306,7 @@ class D4AIWakeWordService : Service() {
             .setContentTitle("D4AI")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(talk) // tap notif = talk, not only open app
+            .setContentIntent(talk)
             .addAction(0, "Talk", talk)
             .addAction(0, "Stop", stop)
             .setOngoing(true)
@@ -367,7 +324,11 @@ class D4AIWakeWordService : Service() {
 
     private fun stopSelfSafe() {
         isRunning = false
-        main.removeCallbacks(listenRunnable)
+        try {
+            vosk?.release()
+        } catch (_: Exception) {
+        }
+        vosk = null
         try {
             speech.stopListening()
             speech.shutdown()
@@ -384,7 +345,10 @@ class D4AIWakeWordService : Service() {
 
     override fun onDestroy() {
         isRunning = false
-        main.removeCallbacks(listenRunnable)
+        try {
+            vosk?.release()
+        } catch (_: Exception) {
+        }
         instance = null
         super.onDestroy()
     }
