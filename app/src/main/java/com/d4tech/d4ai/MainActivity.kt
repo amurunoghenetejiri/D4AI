@@ -55,8 +55,8 @@ class MainActivity : AppCompatActivity() {
         )
         speech.init { }
 
-        web = WebView(this)
-        setContentView(web)
+        setContentView(R.layout.activity_main)
+        web = findViewById(R.id.web)
         val s = web.settings
         s.javaScriptEnabled = true
         s.domStorageEnabled = true
