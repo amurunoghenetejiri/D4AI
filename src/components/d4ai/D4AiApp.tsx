@@ -42,18 +42,38 @@ import {
   ThumbsUp,
   Trash2,
   Volume2,
-  Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { askD4AI } from "@/lib/pollinations";
 import { appNavigate } from "@/lib/app-navigate";
 import { useSessionUser } from "@/lib/session";
-import {
-  D4AiConnectionsSheet,
-  isD4AiOwner,
-  readGithubToken,
-} from "@/components/d4ai/D4AiConnections";
+import type { SessionUser } from "@/lib/session";
+
+export function isD4AiOwner(session: SessionUser | null | undefined): boolean {
+  if (!session) return false;
+  const email = String(session.email || "").trim().toLowerCase();
+  const name = String(session.fullName || "").trim().toLowerCase();
+  const ownerEmails = (
+    (typeof import.meta !== "undefined" &&
+      (import.meta as { env?: Record<string, string> }).env?.["VITE_D4AI_OWNER_EMAILS"]) ||
+    "amurundestiny@gmail.com,amurunoghenetejiri@gmail.com"
+  )
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (ownerEmails.includes(email)) return true;
+  if (email.startsWith("amurun") && email.endsWith("@gmail.com")) return true;
+  if (session.roles?.includes("super_admin") && email.includes("amurun")) return true;
+  if (
+    name.includes("amurun") &&
+    (name.includes("destiny") || name.includes("oghenetejiri"))
+  ) {
+    return true;
+  }
+  return false;
+}
 
 /** Standalone D4AI app root */
 export default function D4AiApp() {
@@ -65,8 +85,8 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  imagePreview?: string;
-  docName?: string;
+  imagePreview?: string | undefined;
+  docName?: string | undefined;
   createdAt?: number;
 };
 type Conversation = {
@@ -159,7 +179,7 @@ async function extractPdfText(file: File): Promise<string> {
       const page = await doc.getPage(i);
       const tc = await page.getTextContent();
       const line = tc.items
-        .map((it: unknown) => ("str" in it ? String((it as { str: string }).str) : ""))
+        .map((it) => String((it as { str?: string }).str ?? ""))
         .join(" ");
       if (line.trim()) parts.push(line.trim());
     }
@@ -978,8 +998,6 @@ function D4AiPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [autoSpeak, setAutoSpeak] = useState(() => {
     try {
@@ -1670,6 +1688,7 @@ function D4AiPage() {
     const opts: { imgs?: string[]; dText?: string; dName?: string } = {};
     const dText = docText || undefined;
     const dName = docName || undefined;
+    const imgs = imagePreview ? [imagePreview] : undefined;
     setInput("");
     setImageB64(null);
     setImagePreview(null);
@@ -2610,7 +2629,7 @@ function D4AiPage() {
       {!historyOpen && !settingsOpen ? (
         <>
           {header}
-          <D4AiConnectionsSheet open={connectionsOpen} onClose={() => setConnectionsOpen(false)} session={session ?? null} />
+
 
           {tab === "home" ? homeView : chatView}
 
@@ -2645,7 +2664,6 @@ function D4AiPage() {
               </button>
               {[
                 { icon: History, label: "Chat History", action: () => { setDrawer(false); setHistoryOpen(true); } },
-                { icon: Wrench, label: "Tools & Integrations", action: () => { setDrawer(false); setConnectionsOpen(true); } },
                 { icon: Phone, label: "Voice & Call", action: () => { setDrawer(false); startCallMode(); } },
                 { icon: Settings, label: "Settings", action: () => { setDrawer(false); setSettingsOpen(true); } },
                 { icon: Info, label: "About D4AI", action: () => { setDrawer(false); setAboutOpen(true); } },
@@ -3144,36 +3162,6 @@ function D4AiPage() {
                 }}
               >
                 Resend
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ---------- Tools & integrations ---------- */}
-      {toolsOpen ? (
-        <div className="absolute inset-0 z-[85] flex items-center justify-center bg-black/60 p-4">
-          <div className={cn("w-full max-w-sm rounded-2xl p-5 text-center shadow-2xl", dark ? "bg-[#0c2244] ring-1 ring-cyan-400/20" : "bg-white ring-1 ring-slate-200")}>
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500/15">
-              <Wrench className="h-6 w-6 text-cyan-300" />
-            </div>
-            <h3 className={cn("text-base font-bold", dark ? "text-white" : "text-slate-900")}>Tools & Integrations</h3>
-            <p className={cn("mt-1 text-sm", dark ? "text-slate-400" : "text-slate-600")}>
-              Connect GitHub, Lovable, Supabase, and MCP servers to supercharge D4AI.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button type="button" className={cn("flex-1 rounded-xl py-2 text-sm", dark ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700")} onClick={() => setToolsOpen(false)}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-xl bg-gradient-to-r from-[#1d4ed8] to-[#2563eb] py-2 text-sm font-semibold text-white"
-                onClick={() => {
-                  setToolsOpen(false);
-                  setConnectionsOpen(true);
-                }}
-              >
-                Connect
               </button>
             </div>
           </div>
