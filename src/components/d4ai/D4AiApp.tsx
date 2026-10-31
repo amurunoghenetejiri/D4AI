@@ -3151,36 +3151,6 @@ function D4AiPage() {
         </div>
       ) : null}
 
-      {/* ---------- Tools & integrations ---------- */}
-      {toolsOpen ? (
-        <div className="absolute inset-0 z-[85] flex items-center justify-center bg-black/60 p-4">
-          <div className={cn("w-full max-w-sm rounded-2xl p-5 text-center shadow-2xl", dark ? "bg-[#0c2244] ring-1 ring-cyan-400/20" : "bg-white ring-1 ring-slate-200")}>
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-cyan-500/15">
-              <Wrench className="h-6 w-6 text-cyan-300" />
-            </div>
-            <h3 className={cn("text-base font-bold", dark ? "text-white" : "text-slate-900")}>Tools & Integrations</h3>
-            <p className={cn("mt-1 text-sm", dark ? "text-slate-400" : "text-slate-600")}>
-              Connect GitHub, Lovable, Supabase, and MCP servers to supercharge D4AI.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button type="button" className={cn("flex-1 rounded-xl py-2 text-sm", dark ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700")} onClick={() => setToolsOpen(false)}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-xl bg-gradient-to-r from-[#1d4ed8] to-[#2563eb] py-2 text-sm font-semibold text-white"
-                onClick={() => {
-                  setToolsOpen(false);
-                  setConnectionsOpen(true);
-                }}
-              >
-                Connect
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {/* ---------- About ---------- */}
       {aboutOpen ? (
         <div className="absolute inset-0 z-[85] flex items-center justify-center bg-black/60 p-4">
