@@ -119,6 +119,49 @@ class CommandRouter(private val context: Context) {
         if (lower.contains("battery") && (lower.contains("percent") || lower.contains("level") || lower.contains("how much") || lower.contains("status"))) {
             return RouteResult.Spoke(batteryReport())
         }
+        if (lower.contains("what time") || lower == "current time" || lower == "time") {
+            return RouteResult.Spoke("It is " + java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date()) + ".")
+        }
+        if (lower.contains("today") && lower.contains("date") || lower == "what is the date") {
+            return RouteResult.Spoke("Today is " + java.text.SimpleDateFormat("EEEE, d MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date()) + ".")
+        }
+        if (lower.contains("android version") || lower.contains("phone model") || lower.contains("device information")) {
+            return RouteResult.Spoke("Android " + Build.VERSION.RELEASE + ", API level " + Build.VERSION.SDK_INT + ".")
+        }
+        if (lower.contains("available ram") || lower.contains("how much ram") || lower == "ram") {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mi = android.app.ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mi)
+            return RouteResult.Spoke("Available RAM is about " + "%.1f GB".format(mi.availMem / 1073741824.0) + " of " + "%.1f GB".format(mi.totalMem / 1073741824.0) + ".")
+        }
+        if (lower.contains("battery temperature") || lower.contains("battery temp")) {
+            val battery = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val temp = battery?.getIntExtra("temperature", -1) ?: -1
+            return RouteResult.Spoke(if (temp >= 0) "Battery temperature is %.1f degrees Celsius.".format(temp / 10.0) else "Android did not provide battery temperature.")
+        }
+        if (lower.contains("charging")) {
+            val battery = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val status = battery?.getIntExtra("status", -1) ?: -1
+            return RouteResult.Spoke(if (status == 2 || status == 5) "Yes, your phone is charging." else "Your phone is not charging.")
+        }
+        if (lower.contains("turn on dark mode") || lower.contains("enable dark mode")) {
+            return RouteResult.Spoke(openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening Display settings so you can enable dark theme if your phone supports it."))
+        }
+        if (lower.contains("auto brightness") || lower.contains("adaptive brightness")) {
+            return RouteResult.Spoke(openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening Display settings for adaptive brightness."))
+        }
+        if (lower.contains("auto rotate") || lower.contains("screen rotation") || lower.contains("rotation lock")) {
+            return RouteResult.Spoke(openSettingsAction("android.settings.DISPLAY_SETTINGS", "Opening Display settings. Android may require you to change rotation there."))
+        }
+        if (lower.contains("battery saver") || lower.contains("power saving")) {
+            return RouteResult.Spoke(openBatterySaver())
+        }
+        if (lower.contains("wifi") || lower.contains("wi-fi")) {
+            return RouteResult.Spoke(openSettingsAction(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS, "Opening Wi-Fi controls. Android may require you to confirm the change."))
+        }
+        if (lower.contains("airplane mode") || lower.contains("flight mode")) {
+            return RouteResult.Spoke(openSettingsAction(Settings.ACTION_AIRPLANE_MODE_SETTINGS, "Opening airplane mode settings. Android does not allow ordinary apps to switch this directly."))
+        }
 
         // --- open / launch (with or without the word open) ---
         Regex("^(open|launch|start|run)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
