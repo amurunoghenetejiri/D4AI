@@ -92,6 +92,23 @@ class CommandRouter(private val context: Context) {
             )
         }
 
+        // --- music ---
+        if (lower == "play music" || lower == "play some music" || lower == "play a song" ||
+            lower.startsWith("play music") || lower == "music please"
+        ) {
+            pending = PendingAction("play_music_wait")
+            return RouteResult.NeedConfirm(
+                pending!!,
+                "Do you have a song in mind, or should I play something nice?",
+            )
+        }
+        Regex("^play\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let { m ->
+            val song = m.groupValues[1].trim()
+            if (!song.equals("music", true) && !song.startsWith("music")) {
+                return RouteResult.Spoke(playMusicNamed(song))
+            }
+        }
+
         // --- phone storage / battery / device info (local) ---
         if (lower.contains("storage") && (lower.contains("phone") || lower.contains("my") || lower.contains("how much") || lower.contains("free") || lower.contains("space"))) {
             return RouteResult.Spoke(storageReport())
