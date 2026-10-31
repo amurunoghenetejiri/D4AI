@@ -1,24 +1,16 @@
 package com.d4tech.d4ai
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.Gravity
-import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.PopupMenu
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import android.webkit.JavascriptInterface
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -32,223 +24,178 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+/**
+ * D4EXAM-style chat UI (WebView assets) + native voice/commands.
+ */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var chatContainer: LinearLayout
-    private lateinit var chatScroll: ScrollView
-    private lateinit var input: EditText
-    private lateinit var statusLine: TextView
-    private lateinit var listenBanner: TextView
-    private lateinit var btnAuto: Button
+    private lateinit var web: WebView
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private var autoTalk = true
-    private var busy = false
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         PollinationsClient.init(applicationContext)
         router = CommandRouter(applicationContext)
 
-        chatContainer = findViewById(R.id.chatContainer)
-        chatScroll = findViewById(R.id.chatScroll)
-        input = findViewById(R.id.input)
-        statusLine = findViewById(R.id.statusLine)
-        listenBanner = findViewById(R.id.listenBanner)
-        btnAuto = findViewById(R.id.btnAuto)
-
         speech = SpeechEngine(
             context = this,
-            onHeard = { text -> runOnUiThread { send(text) } },
+            onHeard = { text ->
+                runOnUiThread {
+                    eval("window.onD4AIHeard(" + jsonString(text) + ")")
+                }
+            },
             onListening = { on ->
                 runOnUiThread {
-                    listenBanner.visibility = if (on) View.VISIBLE else View.GONE
-                    listenBanner.text = if (on) "D4AI listening…" else ""
-                    statusLine.text = if (on) "Listening…" else "Online · v1.1"
+                    if (on) eval("window.onD4AIStatus('D4AI listening…')")
+                    else eval("window.onD4AIStatus('')")
                 }
             },
         )
         speech.init { }
 
-        findViewById<ImageButton>(R.id.btnSend).setOnClickListener { send(input.text.toString()) }
-        findViewById<ImageButton>(R.id.btnMic).setOnClickListener {
-            ensureMic()
-            speech.startListening()
+        web = findViewById(R.id.web)
+        val s = web.settings
+        s.javaScriptEnabled = true
+        s.domStorageEnabled = true
+        s.allowFileAccess = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            s.allowUniversalAccessFromFileURLs = true
+            s.allowFileAccessFromFileURLs = true
         }
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                send(input.text.toString())
-                true
-            } else {
-                false
-            }
-        }
-        btnAuto.setOnClickListener {
-            autoTalk = !autoTalk
-            btnAuto.text = if (autoTalk) "Auto-talk On" else "Auto-talk"
-        }
-        findViewById<ImageButton>(R.id.btnMenu).setOnClickListener { v -> showMenu(v) }
+        s.cacheMode = WebSettings.LOAD_DEFAULT
+        web.webViewClient = WebViewClient()
+        web.addJavascriptInterface(Bridge(), "D4AI")
+        web.loadUrl("file:///android_asset/www/index.html")
 
-        append(
-            "ai",
-            "Hey! I'm D4AI — your personal Android assistant by D4TECH.\n\n" +
-                "Try: open WhatsApp, volume up, flashlight, what is my phone storage. Say sleep to stop listening.",
-        )
-        ensureMic()
+        ensurePerms()
     }
 
-    private fun showMenu(anchor: View) {
-        PopupMenu(this, anchor).apply {
-            menu.add("Wake D4AI (background)")
-            menu.add("Sleep D4AI")
-            menu.add("Set as assistant")
-            menu.add("AI API key (unlimited)")
-            menu.add("Clear chat")
-            menu.add("About")
-            setOnMenuItemClickListener { item ->
-                when (item.title?.toString()) {
-                    "Wake D4AI (background)" -> wakeBackground()
-                    "Sleep D4AI" -> sleepBackground()
-                    "Set as assistant" -> {
-                        try {
-                            startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-                        } catch (_: Exception) {
-                        }
-                    }
-                    "AI API key (unlimited)" -> promptApiKey()
-                    "Clear chat" -> chatContainer.removeAllViews()
-                    "About" -> append(
-                        "ai",
-                        "D4AI by D4TECH — Creating Solutions, Innovating Lives.\nCreator: Amurun Destiny O.",
-                    )
-                }
-                true
-            }
-            show()
-        }
-    }
-
-    private fun promptApiKey() {
-        val edit = EditText(this).apply {
-            hint = "sk_… from enter.pollinations.ai"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setBackgroundColor(Color.parseColor("#0b1a33"))
-            setPadding(24, 24, 24, 24)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Pollinations API key")
-            .setMessage("Free key from enter.pollinations.ai removes rate limits.")
-            .setView(edit)
-            .setPositiveButton("Save") { _, _ ->
-                PollinationsClient.setApiKey(this, edit.text.toString())
-                append("ai", "API key saved.")
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun wakeBackground() {
-        ensureMic()
-        val i = Intent(this, D4AiListenService::class.java).apply {
-            action = D4AiListenService.ACTION_WAKE
-        }
-        try {
-            ContextCompat.startForegroundService(this, i)
-        } catch (_: Exception) {
-            startService(i)
-        }
-        append("ai", "Waking in background — D4AI listening.")
-    }
-
-    private fun sleepBackground() {
-        startService(
-            Intent(this, D4AiListenService::class.java).apply {
-                action = D4AiListenService.ACTION_SLEEP
-            },
-        )
-        speech.stopListening()
-        append("ai", "Sleeping.")
-    }
-
-    private fun send(raw: String) {
-        val text = raw.trim()
-        if (text.isEmpty() || busy) return
-        busy = true
-        input.setText("")
-        append("user", text)
-        scope.launch {
-            try {
-                when (val r = router.handle(text)) {
-                    is RouteResult.Spoke -> {
-                        if (r.message == "__SLEEP__") {
-                            sleepBackground()
-                            append("ai", "Going to sleep.")
-                        } else {
-                            append("ai", r.message)
-                            if (autoTalk) speech.speak(r.message, listenAfter = false)
-                        }
-                    }
-                    is RouteResult.NeedConfirm -> {
-                        append("ai", r.prompt)
-                        if (autoTalk) speech.speak(r.prompt, listenAfter = true)
-                    }
-                    RouteResult.NotCommand -> {
-                        val answer = PollinationsClient.ask(text)
-                        append("ai", answer)
-                        if (autoTalk) speech.speak(answer, listenAfter = false)
-                    }
-                }
-            } catch (e: Exception) {
-                append("ai", e.message ?: "Something went wrong.")
-            }
-            busy = false
-        }
-    }
-
-    private fun append(role: String, text: String) {
-        val tv = TextView(this).apply {
-            this.text = text
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            setPadding(28, 22, 28, 22)
-            val bg = GradientDrawable().apply {
-                cornerRadius = 36f
-                setColor(
-                    if (role == "user") Color.parseColor("#2563eb")
-                    else Color.parseColor("#0f2744"),
-                )
-            }
-            background = bg
-            maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = if (role == "user") Gravity.END else Gravity.START
-            setPadding(0, 8, 0, 8)
-            addView(tv)
-        }
-        chatContainer.addView(row)
-        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    private fun ensureMic() {
+    private fun ensurePerms() {
         val need = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            need.add(Manifest.permission.RECORD_AUDIO)
+        fun want(p: String) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                need.add(p)
+            }
         }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            need.add(Manifest.permission.POST_NOTIFICATIONS)
+        want(Manifest.permission.RECORD_AUDIO)
+        want(Manifest.permission.CALL_PHONE)
+        want(Manifest.permission.READ_CONTACTS)
+        want(Manifest.permission.READ_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= 33) {
+            want(Manifest.permission.POST_NOTIFICATIONS)
+            want(Manifest.permission.READ_MEDIA_AUDIO)
         }
         if (need.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, need.toTypedArray(), 10)
+            ActivityCompat.requestPermissions(this, need.toTypedArray(), 100)
+        }
+    }
+
+    private fun eval(js: String) {
+        web.evaluateJavascript(js, null)
+    }
+
+    private fun jsonString(s: String): String {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("\n", "\\n").replace("\r", "") + "\""
+    }
+
+    inner class Bridge {
+        @JavascriptInterface
+        fun ask(message: String) {
+            scope.launch {
+                try {
+                    when (val r = router.handle(message)) {
+                        is RouteResult.Spoke -> {
+                            if (r.message == "__SLEEP__") {
+                                speech.speak("D4AI sleeping", listenAfter = false)
+                                deliver(true, "Going to sleep.")
+                                startService(
+                                    Intent(this@MainActivity, D4AiListenService::class.java)
+                                        .setAction(D4AiListenService.ACTION_SLEEP),
+                                )
+                            } else {
+                                // Speak action feedback (opening WhatsApp, etc.)
+                                speech.speak(r.message, listenAfter = false)
+                                deliver(true, r.message)
+                            }
+                        }
+                        is RouteResult.NeedConfirm -> {
+                            speech.speak(r.prompt, listenAfter = true)
+                            deliver(true, r.prompt)
+                        }
+                        RouteResult.NotCommand -> {
+                            val answer = PollinationsClient.ask(message)
+                            speech.speak(answer, listenAfter = false)
+                            deliver(true, answer)
+                        }
+                    }
+                } catch (e: Exception) {
+                    deliver(false, e.message ?: "Failed")
+                }
+            }
+        }
+
+        private fun deliver(ok: Boolean, msg: String) {
+            runOnUiThread {
+                eval("if(window._d4aiAskCb)window._d4aiAskCb($ok,${jsonString(msg)})")
+            }
+        }
+
+        @JavascriptInterface
+        fun speak(text: String) {
+            runOnUiThread { speech.speak(text, listenAfter = false) }
+        }
+
+        @JavascriptInterface
+        fun listen() {
+            runOnUiThread {
+                ensurePerms()
+                speech.startListening()
+                eval("window.onD4AIStatus('D4AI listening…')")
+            }
+        }
+
+        @JavascriptInterface
+        fun wake() {
+            runOnUiThread {
+                ensurePerms()
+                val i = Intent(this@MainActivity, D4AiListenService::class.java)
+                    .setAction(D4AiListenService.ACTION_WAKE)
+                try {
+                    ContextCompat.startForegroundService(this@MainActivity, i)
+                } catch (_: Exception) {
+                    startService(i)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun sleep() {
+            runOnUiThread {
+                speech.stopListening()
+                speech.speak("D4AI sleeping", listenAfter = false)
+                startService(
+                    Intent(this@MainActivity, D4AiListenService::class.java)
+                        .setAction(D4AiListenService.ACTION_SLEEP),
+                )
+            }
+        }
+
+        @JavascriptInterface
+        fun setApiKey(key: String) {
+            PollinationsClient.setApiKey(applicationContext, key)
+        }
+
+        @JavascriptInterface
+        fun openAssistSettings() {
+            try {
+                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+            } catch (_: Exception) {
+            }
         }
     }
 

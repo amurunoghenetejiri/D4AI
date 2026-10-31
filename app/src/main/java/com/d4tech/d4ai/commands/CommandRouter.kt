@@ -39,6 +39,29 @@ class CommandRouter(private val context: Context) {
 
         // --- confirmations ---
         pending?.let { p ->
+            if (p.type == "play_music_wait") {
+                pending = null
+                if (isNo(lower) || lower.contains("anything") || lower.contains("surprise") || lower.contains("you choose") || lower.contains("nice")) {
+                    return RouteResult.Spoke(playAnyMusic())
+                }
+                return RouteResult.Spoke(playMusicNamed(text.trim()))
+            }
+            if (p.type == "call_sim") {
+                if (lower.contains("1") || lower.contains("one") || lower.contains("sim 1") || lower.contains("sim1")) {
+                    val r = placeCall(p.arg, simSlot = 0)
+                    pending = null
+                    return RouteResult.Spoke(r)
+                }
+                if (lower.contains("2") || lower.contains("two") || lower.contains("sim 2") || lower.contains("sim2")) {
+                    val r = placeCall(p.arg, simSlot = 1)
+                    pending = null
+                    return RouteResult.Spoke(r)
+                }
+                if (isNo(lower)) {
+                    pending = null
+                    return RouteResult.Spoke("Okay, cancelled.")
+                }
+            }
             if (isYes(lower)) {
                 val r = execute(p)
                 pending = null
@@ -97,6 +120,10 @@ class CommandRouter(private val context: Context) {
             val target = it.groupValues[1].trim()
             val digits = target.replace(Regex("[^0-9+]"), "")
             if (digits.length >= 3) {
+                if (simCount() >= 2) {
+                    pending = PendingAction("call_sim", digits)
+                    return RouteResult.NeedConfirm(pending!!, "Call $digits? Say SIM 1 or SIM 2.")
+                }
                 pending = PendingAction("call", digits)
                 return RouteResult.NeedConfirm(pending!!, "Call $digits? Say yes or no.")
             }
@@ -424,19 +451,107 @@ class CommandRouter(private val context: Context) {
 
     // -------- phone / sms --------
 
-    private fun placeCall(num: String): String {
+    private fun placeCall(num: String, simSlot: Int? = null): String {
         return try {
-            context.startActivity(
-                Intent(Intent.ACTION_CALL, Uri.parse("tel:$num")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            "Calling $num."
+            val uri = Uri.parse("tel:$num")
+            val i = Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Best-effort SIM hint (OEM-dependent)
+            if (simSlot != null) {
+                i.putExtra("com.android.phone.extra.slot", simSlot)
+                i.putExtra("slot", simSlot)
+                i.putExtra("simId", simSlot)
+            }
+            context.startActivity(i)
+            when (simSlot) {
+                0 -> "Calling $num on SIM 1."
+                1 -> "Calling $num on SIM 2."
+                else -> "Calling $num."
+            }
         } catch (_: SecurityException) {
             context.startActivity(
                 Intent(Intent.ACTION_DIAL, Uri.parse("tel:$num")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
-            "Opening dialer for $num."
+            "Opening dialer for $num. Choose the SIM if asked."
         } catch (e: Exception) {
             "Could not call: ${e.message}"
+        }
+    }
+
+    private fun simCount(): Int {
+        return try {
+            val tm = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+            val list = tm?.callCapablePhoneAccounts
+            list?.size ?: 1
+        } catch (_: Exception) {
+            1
+        }
+    }
+
+    private fun playMusicNamed(name: String): String {
+        return try {
+            val resolver = context.contentResolver
+            val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val cursor = resolver.query(
+                uri,
+                arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.DATA),
+                "${MediaStore.Audio.Media.TITLE} LIKE ?",
+                arrayOf("%$name%"),
+                MediaStore.Audio.Media.TITLE + " ASC",
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val id = it.getLong(0)
+                    val title = it.getString(1) ?: name
+                    val content = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
+                    val play = Intent(Intent.ACTION_VIEW).setDataAndType(content, "audio/*")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(play)
+                    return "Playing $title."
+                }
+            }
+            // fallback: search via intent
+            try {
+                context.startActivity(
+                    Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                        .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, MediaStore.Audio.Media.ENTRY_CONTENT_TYPE)
+                        .putExtra(MediaStore.EXTRA_MEDIA_TITLE, name)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                "Looking for $name."
+            } catch (_: Exception) {
+                "I couldn't find a song named $name on this phone."
+            }
+        } catch (e: Exception) {
+            "Music error: ${e.message}"
+        }
+    }
+
+    private fun playAnyMusic(): String {
+        return try {
+            val resolver = context.contentResolver
+            val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val cursor = resolver.query(
+                uri,
+                arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE),
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                null,
+                MediaStore.Audio.Media.DATE_ADDED + " DESC",
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val id = it.getLong(0)
+                    val title = it.getString(1) ?: "track"
+                    val content = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW).setDataAndType(content, "audio/*")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    return "Playing $title."
+                }
+            }
+            "I couldn't find music on this phone. Add songs to your library first."
+        } catch (e: Exception) {
+            "Music error: ${e.message}"
         }
     }
 
@@ -456,6 +571,10 @@ class CommandRouter(private val context: Context) {
                 if (it.moveToFirst()) {
                     val num = it.getString(0)
                     val disp = it.getString(1)
+                    if (simCount() >= 2) {
+                        pending = PendingAction("call_sim", num)
+                        return "Found $disp. Say SIM 1 or SIM 2 to call."
+                    }
                     return placeCall(num) + " ($disp)"
                 }
             }
