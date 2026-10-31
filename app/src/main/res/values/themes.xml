@@ -7,7 +7,6 @@
         <item name="android:statusBarColor">#0b1a3a</item>
         <item name="android:navigationBarColor">#050b18</item>
         <item name="android:windowBackground">#050b18</item>
-        <item name="android:windowLightStatusBar">false</item>
     </style>
     <style name="Theme.D4AI.Splash" parent="Theme.D4AI" />
     <style name="AppTheme" parent="Theme.D4AI" />
