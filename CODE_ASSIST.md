@@ -1,32 +1,30 @@
-# Code Assist — how to run D4AI
+# Code Assist — Run D4AI
 
-## Correct project
+## If Play says “Nothing to run”
 
-D4AI is now a **real Android project at the repo root**.
+1. Tap **More (⋯)** → **Sync project with Gradle files** (or **Build**).
+2. Wait until sync finishes (progress at top).
+3. Tap the config dropdown near Play (may say “Nothing to run”).
+4. Choose **app**.
+5. Tap **Play** again.
 
-After you **pull / re-clone**, you should see:
+If there is no **app** config:
 
-**D4AI · Android · 1 module**
-
-Not: *Files · 0 modules*
-
-## Steps
-
-1. In Code Assist **Projects** list, remove/close the old **D4AI (0 modules)** if it is still there.
-2. **Clone again** or **pull** from:
+1. **More → Build → Make Project**
+2. Or **More → Terminal** and run:
    ```text
-   https://github.com/amurunoghenetejiri/D4AI.git
+   ./gradlew :app:assembleDebug
    ```
-3. Open **D4AI** (the new one — must say **Android · 1 module**).
-4. Wait for **Gradle sync**.
-5. Tap **Run** (green play) → install on phone.
-6. Allow **Microphone** → tap **Wake D4AI**.
+3. After a successful build, **Play** should list **app**.
+
+## First open
+
+1. Open project **D4AI** (must show **Android · 1 module**).
+2. Allow Gradle download/sync (needs internet).
+3. Select **app** → **Run** → install on phone.
+4. Allow **Microphone** → **Wake D4AI**.
 
 ## Do not open
 
-- Old “D4AI · 0 modules” (web-only snapshot)
-- Only the nested `android` folder is no longer required — root is the app
-
-## “D4AI assistant”
-
-If you still have **D4AI assistant (1 module)** from earlier, you can ignore it or delete it. Use the main **D4AI** repo after this update.
+- Random files like `gradle-wrapper.properties` as “run target”
+- `.platform` or `gradle-backup` folders
