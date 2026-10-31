@@ -2611,7 +2611,7 @@ function D4AiPage() {
       {!historyOpen && !settingsOpen ? (
         <>
           {header}
-          <D4AiConnectionsSheet open={connectionsOpen} onClose={() => setConnectionsOpen(false)} session={session ?? null} />
+
 
           {tab === "home" ? homeView : chatView}
 
