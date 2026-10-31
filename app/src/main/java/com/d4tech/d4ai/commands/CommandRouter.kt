@@ -63,7 +63,7 @@ class CommandRouter(private val context: Context) {
                 }
                 // treat as game name
                 pending = PendingAction("install_game", text.trim())
-                return RouteResult.NeedConfirm(pending!!, "Search Play Store for "${text.trim()}"? Say yes or no.")
+                return RouteResult.NeedConfirm(pending!!, "Search Play Store for " + text.trim() + "? Say yes or no.")
             }
             if (p.type == "play_music_wait") {
                 pending = null
@@ -183,16 +183,16 @@ class CommandRouter(private val context: Context) {
         }
 
         // --- open X and search Y ---
-        Regex("^open\s+(.+?)\s+and\s+search\s+(?:for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+        Regex("""^open\s+(.+?)\s+and\s+search\s+(?:for\s+)?(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             val app = it.groupValues[1].trim()
             val q = it.groupValues[2].trim()
             openApp(app)
             return RouteResult.Spoke(webSearch(q).replace("Searching Google", "Opened $app and searching"))
         }
-        Regex("^open\s+google\s+and\s+search\s+(?:for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+        Regex("""^open\s+google\s+and\s+search\s+(?:for\s+)?(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             return RouteResult.Spoke(webSearch(it.groupValues[1].trim()))
         }
-        Regex("^search\s+(?:google\s+for\s+|for\s+)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+        Regex("""^search\s+(?:google\s+for\s+|for\s+)?(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             return RouteResult.Spoke(webSearch(it.groupValues[1].trim()))
         }
 
@@ -953,7 +953,7 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke("Tell me the expression to calculate, for example 25 times 4.")
         }
         if (appL.contains("chrome") || appL.contains("browser") || appL.contains("google")) {
-            val q = request.replace(Regex("(?i)search\s*(for)?"), "").trim()
+            val q = request.replace(Regex("""(?i)search\s*(for)?"""), "").trim()
             if (q.isNotEmpty()) return RouteResult.Spoke(webSearch(q))
             return RouteResult.Spoke("What should I search for?")
         }
@@ -988,6 +988,29 @@ class CommandRouter(private val context: Context) {
         return RouteResult.NeedConfirm(pending!!, spoken)
     }
 
+
+
+    private fun openWifiPanel(msg: String): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                context.startActivity(Intent(Settings.Panel.ACTION_WIFI).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } else {
+                context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            msg
+        } catch (e: Exception) {
+            openSettingsAction(Settings.ACTION_WIFI_SETTINGS, msg)
+        }
+    }
+
+    private fun openBtPanel(msg: String): String {
+        return try {
+            context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            msg
+        } catch (e: Exception) {
+            "Couldn't open Bluetooth: ${e.message}"
+        }
+    }
 
     private fun clearNotifications(): String {
         return try {
