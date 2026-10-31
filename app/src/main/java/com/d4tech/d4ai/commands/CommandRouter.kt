@@ -37,7 +37,14 @@ class CommandRouter(private val context: Context) {
     private var pending: PendingAction? = null
     private var torchOn = false
 
+    /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
+        val result = route(raw)
+        if (result != RouteResult.NotCommand) MemoryStore.logCommand(raw.trim().take(180))
+        return result
+    }
+
+    private fun route(raw: String): RouteResult {
         val text = raw.trim()
         val lower = text.lowercase().trim()
         if (lower.isEmpty()) return RouteResult.NotCommand
