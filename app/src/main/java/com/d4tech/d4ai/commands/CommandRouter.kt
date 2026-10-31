@@ -90,6 +90,53 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke("__SLEEP__")
         }
 
+        // --- set D4AI as the phone's default assistant ---
+        if (containsAny(lower, "default assistant", "default ai", "set you as default", "make you default")) {
+            return RouteResult.Spoke(openDefaultAssistantSettings())
+        }
+
+        // --- memory: remember / notes / history ---
+        Regex("^(?:remember|note to self|make a note(?:\\s+that|\\s+to)?)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            val note = it.groupValues[1].trim()
+            return if (MemoryStore.addNote(note)) {
+                RouteResult.Spoke("Noted. I'll remember: $note.")
+            } else {
+                RouteResult.Spoke("I couldn't save that note.")
+            }
+        }
+        if (matchesAny(lower, "what do you remember", "read my notes", "my notes", "what are my notes", "show my notes")) {
+            val list = MemoryStore.notes()
+            return if (list.isEmpty()) {
+                RouteResult.Spoke("You haven't asked me to remember anything yet.")
+            } else {
+                RouteResult.Spoke("Here is what I remember. " + list.mapIndexed { i, n -> "${i + 1}. $n" }.joinToString(". ") + ".")
+            }
+        }
+        if (matchesAny(lower, "forget everything", "forget all notes", "clear notes", "clear my notes", "erase notes")) {
+            val n = MemoryStore.clearNotes()
+            return RouteResult.Spoke("Done. I cleared $n notes.")
+        }
+        Regex("^forget\\s+(?:the\\s+)?(?:note\\s+(?:about\\s+)?)?(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            val gone = MemoryStore.deleteNote(it.groupValues[1].trim())
+            return RouteResult.Spoke(if (gone != null) "Forgotten: $gone." else "I don't have a note matching that.")
+        }
+        if (matchesAny(lower, "forget our conversation", "clear conversation", "clear chat memory", "forget chat")) {
+            MemoryStore.clearChat()
+            return RouteResult.Spoke("Cleared. Our conversation memory is fresh again.")
+        }
+        if (matchesAny(lower, "what was my last command", "last command", "my last command")) {
+            val last = MemoryStore.lastCommand()
+            return RouteResult.Spoke(if (last != null) "Your last command was: $last." else "You haven't given me a command yet.")
+        }
+        if (containsAny(lower, "command history", "what did you do", "what have i asked", "recent commands", "show history")) {
+            val list = MemoryStore.recentCommands(5)
+            return if (list.isEmpty()) {
+                RouteResult.Spoke("No commands yet.")
+            } else {
+                RouteResult.Spoke("Recently I did. " + list.mapIndexed { i, c -> "${i + 1}. $c" }.joinToString(". ") + ".")
+            }
+        }
+
         // --- greetings (command-like social, not LLM) ---
         if (isGreeting(lower)) {
             return RouteResult.Spoke(greetingReply(lower))
