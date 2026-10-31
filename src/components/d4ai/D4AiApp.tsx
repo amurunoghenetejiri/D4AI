@@ -978,8 +978,6 @@ function D4AiPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [autoSpeak, setAutoSpeak] = useState(() => {
     try {
