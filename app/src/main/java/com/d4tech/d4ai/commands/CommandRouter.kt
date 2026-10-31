@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.telecom.TelecomManager
+import com.d4tech.d4ai.ai.DeviceCommand
 import kotlin.math.roundToInt
 
 sealed class RouteResult {
@@ -107,7 +108,7 @@ class CommandRouter(private val context: Context) {
         }
         Regex("^play\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let { m ->
             val song = m.groupValues[1].trim()
-            if (!song.equals("music", true) && !song.startsWith("music")) {
+            if (!song.equals("music", true) && !song.startsWith("music") && !song.endsWith("on youtube")) {
                 return RouteResult.Spoke(playMusicNamed(song))
             }
         }
@@ -139,7 +140,10 @@ class CommandRouter(private val context: Context) {
             val temp = battery?.getIntExtra("temperature", -1) ?: -1
             return RouteResult.Spoke(if (temp >= 0) "Battery temperature is %.1f degrees Celsius.".format(temp / 10.0) else "Android did not provide battery temperature.")
         }
-        if (lower.contains("charging")) {
+        val asksCharging = lower == "charging" || lower.contains("am i charging") ||
+            lower.contains("is my phone charging") || lower.contains("is it charging") ||
+            lower.contains("is the phone charging") || lower.contains("charging status")
+        if (asksCharging) {
             val battery = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             val status = battery?.getIntExtra("status", -1) ?: -1
             return RouteResult.Spoke(if (status == 2 || status == 5) "Yes, your phone is charging." else "Your phone is not charging.")
@@ -156,7 +160,12 @@ class CommandRouter(private val context: Context) {
         if (lower.contains("battery saver") || lower.contains("power saving")) {
             return RouteResult.Spoke(openBatterySaver())
         }
-        if (lower.contains("wifi") || lower.contains("wi-fi")) {
+        val wifiCommand = lower.contains("wifi") || lower.contains("wi-fi") || lower.contains("wi fi")
+        val wifiImperative = lower.startsWith("turn ") || lower.startsWith("open ") || lower.startsWith("switch ") ||
+            lower.startsWith("enable ") || lower.startsWith("disable ") || lower.startsWith("toggle ") ||
+            matchesAny(lower, "wifi", "wi-fi", "wifi on", "wifi off", "wifi settings") ||
+            (lower.contains("wifi") && lower.contains("settings"))
+        if (wifiCommand && wifiImperative) {
             return RouteResult.Spoke(openSettingsAction(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS, "Opening Wi-Fi controls. Android may require you to confirm the change."))
         }
         if (lower.contains("airplane mode") || lower.contains("flight mode")) {
@@ -287,7 +296,10 @@ class CommandRouter(private val context: Context) {
         if (containsAny(lower, "wi-fi", "wifi", "wi fi") && containsAny(lower, "open", "turn", "settings", "on", "off")) {
             return RouteResult.Spoke(openSettingsAction(Settings.ACTION_WIFI_SETTINGS, "Opening Wi‑Fi settings."))
         }
-        if (lower.contains("bluetooth") && containsAny(lower, "open", "turn", "settings", "on", "off")) {
+        if (lower.contains("bluetooth") && (lower.startsWith("turn ") || lower.startsWith("open ") ||
+                lower.startsWith("switch ") || lower.startsWith("enable ") || lower.startsWith("disable ") ||
+                lower.startsWith("toggle ") || lower.contains("bluetooth settings") || lower.contains("connect bluetooth"))
+        ) {
             return RouteResult.Spoke(openSettingsAction(Settings.ACTION_BLUETOOTH_SETTINGS, "Opening Bluetooth settings."))
         }
 
@@ -314,14 +326,213 @@ class CommandRouter(private val context: Context) {
 
         // --- home / recent (limited without accessibility) ---
         if (matchesAny(lower, "go home", "home screen", "show home")) {
-            context.startActivity(
-                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            goHome()
             return RouteResult.Spoke("Home screen.")
         }
 
+        // --- youtube (before generic web search) ---
+        Regex("^(?:play|watch|find|search)\\s+(.+?)\\s+on\\s+youtube$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(openYouTubeSearch(it.groupValues[1].trim()))
+        }
+        Regex("^(?:search\\s+youtube(?:\\s+for)?|youtube)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(openYouTubeSearch(it.groupValues[1].trim()))
+        }
+
+        // --- web search ---
+        Regex("^(?:search(?: the web| online| it)?(?: for)?|google|look up)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            if (!q.contains("youtube", true)) {
+                return RouteResult.Spoke(openWebSearch(q))
+            }
+        }
+
+        // --- maps / navigation ---
+        Regex("^(?:navigate to|directions to|directions|route to|take me to)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(navigateTo(it.groupValues[1].trim()))
+        }
+        if (matchesAny(lower, "where am i", "my location", "what is my location", "current location")) {
+            return RouteResult.Spoke(showLocation())
+        }
+
+        // --- timer ---
+        Regex("(?:set\\s+)?(?:a\\s+)?timer\\s+(?:for\\s+)?(\\d{1,4})\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)?", RegexOption.IGNORE_CASE).find(lower)?.let {
+            val n = it.groupValues[1].toInt().coerceAtLeast(1)
+            val unit = it.groupValues[2].lowercase()
+            val seconds = when {
+                unit.startsWith("h") -> n * 3600
+                unit.startsWith("min") || unit.startsWith("m") -> n * 60
+                else -> n
+            }
+            return RouteResult.Spoke(setTimer(seconds))
+        }
+        if (matchesAny(lower, "timer", "set timer", "start a timer", "start timer")) {
+            return RouteResult.Spoke("How long? Say, for example: set timer for 5 minutes.")
+        }
+
+        // --- email ---
+        Regex("^(?:email|mail|send email to|send a mail to)\\s+(.+?)(?:\\s+saying\\s+|\\s+that\\s+|:\\s*)(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(sendEmail(it.groupValues[1].trim(), it.groupValues[2].trim()))
+        }
+        Regex("^(?:email|mail|send email to|send a mail to)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(sendEmail(it.groupValues[1].trim(), ""))
+        }
+
+        // --- share ---
+        Regex("^share\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(shareText(it.groupValues[1].trim()))
+        }
+
+        // --- recording ---
+        when {
+            containsAny(lower, "screen record", "record my screen", "record the screen") ->
+                return RouteResult.Spoke("Android does not let apps record the screen by voice. Swipe down and use the screen recorder tile.")
+            containsAny(lower, "record a video", "record video", "record a clip") ->
+                return RouteResult.Spoke(recordVideo())
+            containsAny(lower, "record audio", "record voice", "record a voice", "voice recorder", "record sound") ->
+                return RouteResult.Spoke(recordAudio())
+        }
+
+        // --- screenshot ---
+        if (lower.contains("screenshot")) {
+            return RouteResult.Spoke("Android does not let apps take screenshots on their own. Press the power and volume-down buttons together.")
+        }
+
+        // --- close / exit app ---
+        Regex("^(?:close|exit|quit|stop using)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
+            goHome()
+            return RouteResult.Spoke("Closed ${it.groupValues[1].trim()}. Back on the home screen.")
+        }
+
+        // --- notifications ---
+        if (containsAny(lower, "my notifications", "notification shade", "show notification", "open notification", "read notification")) {
+            return RouteResult.Spoke(expandNotifications())
+        }
+
         return RouteResult.NotCommand
+    }
+
+    /**
+     * Executes a command plan produced by the AI classifier so free-form
+     * phrasings still run as device commands.
+     */
+    fun runPlan(plan: DeviceCommand): RouteResult {
+        val arg = plan.arg.trim()
+        val arg2 = plan.arg2.trim()
+        return when (plan.action) {
+            "open_app" -> RouteResult.Spoke(openApp(arg))
+            "close_app", "go_home" -> {
+                goHome()
+                RouteResult.Spoke("Home screen.")
+            }
+            "call_number" -> {
+                pending = PendingAction("call", arg.replace(Regex("[^0-9+]"), ""))
+                RouteResult.NeedConfirm(pending!!, "Call ${pending!!.arg}? Say yes or no.")
+            }
+            "call_contact" -> {
+                pending = PendingAction("call_contact", arg)
+                RouteResult.NeedConfirm(pending!!, "Call $arg? Say yes or no.")
+            }
+            "sms" -> {
+                pending = PendingAction("sms", arg, arg2)
+                RouteResult.NeedConfirm(pending!!, "Send SMS to $arg: \"$arg2\"? Say yes or no.")
+            }
+            "whatsapp_message" -> RouteResult.Spoke(whatsAppMessage(arg, arg2.ifBlank { "Hello from D4AI" }))
+            "email" -> RouteResult.Spoke(sendEmail(arg, arg2))
+            "set_alarm" -> parseAndSetAlarm(arg)
+            "set_timer" -> parseAndSetTimer(arg)
+            "volume_up" -> {
+                adjustVolume(1)
+                RouteResult.Spoke("Volume up.")
+            }
+            "volume_down" -> {
+                adjustVolume(-1)
+                RouteResult.Spoke("Volume down.")
+            }
+            "volume_mute" -> {
+                setVolume(0f)
+                RouteResult.Spoke("Muted.")
+            }
+            "volume_unmute" -> {
+                setVolume(0.4f)
+                RouteResult.Spoke("Unmuted.")
+            }
+            "volume_set" -> {
+                val n = arg.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 100) ?: 50
+                setVolume(n / 100f)
+                RouteResult.Spoke("Volume set to $n percent.")
+            }
+            "brightness_up" -> {
+                bumpBrightness(20)
+                RouteResult.Spoke("Brightness increased.")
+            }
+            "brightness_down" -> {
+                bumpBrightness(-20)
+                RouteResult.Spoke("Brightness decreased.")
+            }
+            "brightness_set" -> {
+                val n = arg.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 100) ?: 50
+                setBrightness(n / 100f)
+                RouteResult.Spoke("Brightness set to $n percent.")
+            }
+            "flashlight_on" -> RouteResult.Spoke(setTorch(true))
+            "flashlight_off" -> RouteResult.Spoke(setTorch(false))
+            "wifi" -> RouteResult.Spoke(openSettingsAction(if (Build.VERSION.SDK_INT >= 29) "android.settings.panel.action.WIFI" else Settings.ACTION_WIFI_SETTINGS, "Opening Wi-Fi controls."))
+            "bluetooth" -> RouteResult.Spoke(openSettingsAction(Settings.ACTION_BLUETOOTH_SETTINGS, "Opening Bluetooth settings."))
+            "airplane_mode" -> RouteResult.Spoke(openSettingsAction(Settings.ACTION_AIRPLANE_MODE_SETTINGS, "Opening airplane mode settings."))
+            "battery_saver" -> RouteResult.Spoke(openBatterySaver())
+            "dark_mode" -> RouteResult.Spoke(openSettingsAction(Settings.ACTION_DISPLAY_SETTINGS, "Opening Display settings so you can enable dark theme."))
+            "search_web" -> RouteResult.Spoke(openWebSearch(arg))
+            "youtube" -> RouteResult.Spoke(openYouTubeSearch(arg))
+            "navigate" -> RouteResult.Spoke(navigateTo(arg))
+            "share" -> RouteResult.Spoke(shareText(arg))
+            "record_audio" -> RouteResult.Spoke(recordAudio())
+            "record_video" -> RouteResult.Spoke(recordVideo())
+            "take_photo" -> RouteResult.Spoke(openCamera())
+            "screenshot" -> RouteResult.Spoke("Android does not let apps take screenshots on their own. Press power and volume-down together.")
+            "uninstall_app" -> {
+                pending = PendingAction("uninstall", arg)
+                RouteResult.NeedConfirm(pending!!, "Uninstall $arg? Say yes or no.")
+            }
+            "install_app" -> RouteResult.Spoke(openPlayStore(arg))
+            "block_number" -> {
+                pending = PendingAction("block", arg)
+                RouteResult.NeedConfirm(pending!!, "Block $arg? Say yes or no.")
+            }
+            "show_notifications" -> RouteResult.Spoke(expandNotifications())
+            "device_info" -> RouteResult.Spoke("Android " + Build.VERSION.RELEASE + ", API level " + Build.VERSION.SDK_INT + ".")
+            else -> RouteResult.Spoke(unsupportedReply())
+        }
+    }
+
+    private fun parseAndSetAlarm(raw: String): RouteResult {
+        val m = Regex("(\\d{1,2})(?::|\\s)?(\\d{2})?\\s*(am|pm)?", RegexOption.IGNORE_CASE).find(raw)
+        return if (m != null) {
+            RouteResult.Spoke(setAlarm(m.groupValues[1].toInt(), m.groupValues[2].toIntOrNull() ?: 0, m.groupValues[3].lowercase()))
+        } else {
+            RouteResult.Spoke("What time? Say, for example: set alarm for 6:30 am.")
+        }
+    }
+
+    private fun parseAndSetTimer(raw: String): RouteResult {
+        val m = Regex("(\\d{1,4})\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)?", RegexOption.IGNORE_CASE).find(raw)
+        return if (m != null) {
+            val n = m.groupValues[1].toInt().coerceAtLeast(1)
+            val unit = m.groupValues[2].lowercase()
+            val seconds = when {
+                unit.startsWith("h") -> n * 3600
+                unit.startsWith("min") || unit.startsWith("m") -> n * 60
+                else -> n
+            }
+            RouteResult.Spoke(setTimer(seconds))
+        } else {
+            RouteResult.Spoke("How long should the timer run? Say: set timer for 5 minutes.")
+        }
+    }
+
+    private fun unsupportedReply(): String {
+        return "I recognized that as a phone command, but I can't do that one yet. " +
+            "I can open apps, call, text, WhatsApp, email, set alarms and timers, search the web and YouTube, " +
+            "navigate, control volume and brightness, use the flashlight, and answer questions."
     }
 
     private fun execute(p: PendingAction): String {
@@ -864,6 +1075,141 @@ class CommandRouter(private val context: Context) {
             return "Opened ${apps[0]}. Long-press the recents button and choose split screen, then pick ${apps[1]}. Android requires this step for security."
         }
         return "To split screen: open the first app, then use Recents → split screen, then pick the second app."
+    }
+
+    // -------- extra device actions --------
+
+    private fun goHome() {
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun openWebSearch(query: String): String {
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Searching the web for $query."
+        } catch (e: Exception) {
+            "Couldn't open the browser: ${e.message}"
+        }
+    }
+
+    private fun openYouTubeSearch(query: String): String {
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(query)))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Searching YouTube for $query."
+        } catch (_: Exception) {
+            openApp("YouTube")
+        }
+    }
+
+    private fun navigateTo(place: String): String {
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(place)))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Finding $place on the map."
+        } catch (e: Exception) {
+            "Couldn't open maps: ${e.message}"
+        }
+    }
+
+    private fun showLocation(): String {
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Opening the map at your current location. Turn on location for a precise fix."
+        } catch (_: Exception) {
+            openSettingsAction(Settings.ACTION_LOCATION_SOURCE_SETTINGS, "Opening location settings so you can enable GPS.")
+        }
+    }
+
+    private fun setTimer(seconds: Int): String {
+        return try {
+            val i = Intent(AlarmClock.ACTION_SET_TIMER)
+                .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI timer")
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            val label = if (seconds >= 60 && seconds % 60 == 0) "${seconds / 60} minute(s)" else "$seconds second(s)"
+            "Timer set for $label."
+        } catch (e: Exception) {
+            "Couldn't set the timer: ${e.message}"
+        }
+    }
+
+    private fun sendEmail(who: String, body: String): String {
+        return try {
+            val i = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+                .putExtra(Intent.EXTRA_EMAIL, arrayOf(who))
+            if (body.isNotBlank()) i.putExtra(Intent.EXTRA_TEXT, body)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            "Opening your email app for $who."
+        } catch (e: Exception) {
+            "Couldn't open email: ${e.message}"
+        }
+    }
+
+    private fun shareText(text: String): String {
+        return try {
+            val i = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, text)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(Intent.createChooser(i, "Share with"))
+            "Choose an app to share it with."
+        } catch (e: Exception) {
+            "Couldn't open share: ${e.message}"
+        }
+    }
+
+    private fun recordAudio(): String {
+        return try {
+            context.startActivity(
+                Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Opening the voice recorder."
+        } catch (_: Exception) {
+            val r = openApp("Recorder")
+            if (r.startsWith("App not found")) "No voice recorder app found on this phone." else r
+        }
+    }
+
+    private fun recordVideo(): String {
+        return try {
+            context.startActivity(
+                Intent(MediaStore.ACTION_VIDEO_CAPTURE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Camera is ready to record video."
+        } catch (e: Exception) {
+            "Couldn't open the camera: ${e.message}"
+        }
+    }
+
+    private fun expandNotifications(): String {
+        return try {
+            val svc = context.getSystemService("statusbar")
+                ?: return openSettingsAction("android.settings.NOTIFICATION_SETTINGS", "Opening notification settings.")
+            val m = svc.javaClass.getMethod("expandNotificationsPanel")
+            m.invoke(svc)
+            "Notifications pulled down."
+        } catch (_: Exception) {
+            openSettingsAction("android.settings.NOTIFICATION_SETTINGS", "I can't pull down the shade from here. Opening notification settings instead.")
+        }
     }
 
     // -------- nlp helpers --------
