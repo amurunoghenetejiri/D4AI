@@ -1,37 +1,30 @@
 package com.d4tech.d4ai.voice
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.d4tech.d4ai.MainActivity
 import com.d4tech.d4ai.R
 import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
-import com.d4tech.d4ai.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Runs while D4AI is "awake": listens, routes commands, answers via Pollinations.
+ * Background listening. Commands work offline. Chat needs network.
  */
 class D4AiListenService : Service() {
-    companion object {
-        const val CHANNEL_ID = "d4ai_listen"
-        const val ACTION_WAKE = "com.d4tech.d4ai.WAKE"
-        const val ACTION_SLEEP = "com.d4tech.d4ai.SLEEP"
-        const val ACTION_FROM_ASSIST = "com.d4tech.d4ai.FROM_ASSIST"
-        @Volatile var isAwake: Boolean = false
-    }
 
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
@@ -40,29 +33,21 @@ class D4AiListenService : Service() {
             context = this,
             onHeard = { text -> handleUtterance(text) },
             onListening = { },
-            onSpeakDone = { },
         )
-        speech.init {
-            if (isAwake) {
-                speech.speak(getString(R.string.listening_prompt), listenAfter = true)
-            }
-        }
+        speech.init { }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_SLEEP -> {
-                sleep()
-                return START_NOT_STICKY
-            }
+            ACTION_SLEEP -> sleep()
             ACTION_WAKE, ACTION_FROM_ASSIST, null -> wake()
         }
         return START_STICKY
     }
 
     private fun ensureChannel() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(android.app.NotificationManager::class.java)
             val ch = android.app.NotificationChannel(
                 CHANNEL_ID,
                 "D4AI Listening",
@@ -88,6 +73,7 @@ class D4AiListenService : Service() {
             .setOngoing(true)
             .build()
         startForeground(42, notif)
+        // Speak then open mic — stays in background
         speech.speak(getString(R.string.listening_prompt), listenAfter = true)
         sendBroadcast(Intent("com.d4tech.d4ai.STATUS").putExtra("awake", true))
     }
@@ -117,8 +103,10 @@ class D4AiListenService : Service() {
                 scope.launch {
                     val answer = try {
                         PollinationsClient.ask(text)
-                    } catch (e: Exception) {
-                        "Sorry, I had a network problem. ${e.message ?: ""}"
+                    } catch (_: Exception) {
+                        "I'm offline for questions right now, but I can still open apps, " +
+                            "change volume, brightness, flashlight, and place calls. " +
+                            "Try saying open WhatsApp, or sleep."
                     }
                     speech.speak(answer, listenAfter = true)
                 }
@@ -133,4 +121,13 @@ class D4AiListenService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        const val CHANNEL_ID = "d4ai_listen"
+        const val ACTION_WAKE = "com.d4tech.d4ai.WAKE"
+        const val ACTION_SLEEP = "com.d4tech.d4ai.SLEEP"
+        const val ACTION_FROM_ASSIST = "com.d4tech.d4ai.FROM_ASSIST"
+        @Volatile
+        var isAwake: Boolean = false
+    }
 }

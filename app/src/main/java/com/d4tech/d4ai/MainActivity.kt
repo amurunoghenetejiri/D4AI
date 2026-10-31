@@ -89,15 +89,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun ensurePerms() {
         val need = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) need.add(Manifest.permission.RECORD_AUDIO)
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) need.add(Manifest.permission.POST_NOTIFICATIONS)
+        fun want(p: String) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                need.add(p)
+            }
+        }
+        want(Manifest.permission.RECORD_AUDIO)
+        want(Manifest.permission.CALL_PHONE)
+        want(Manifest.permission.READ_CONTACTS)
+        want(Manifest.permission.CAMERA)
+        want(Manifest.permission.READ_PHONE_STATE)
+        if (Build.VERSION.SDK_INT >= 33) want(Manifest.permission.POST_NOTIFICATIONS)
         if (need.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, need.toTypedArray(), 100)
+        }
+        // Overlay (display over other apps) — must be opened in settings
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName"),
+                    ),
+                )
+            } catch (_: Exception) {
+            }
         }
     }
 
