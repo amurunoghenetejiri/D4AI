@@ -64,13 +64,19 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/chatList"
+    <ScrollView
+        android:id="@+id/chatScroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:clipToPadding="false"
-        android:padding="12dp" />
+        android:fillViewport="true">
+        <LinearLayout
+            android:id="@+id/chatContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp" />
+    </ScrollView>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -99,7 +105,7 @@
             android:textColorHint="#64748B"
             android:textSize="14sp"
             android:imeOptions="actionSend"
-            android:inputType="textCapSentences|textMultiLine"
+            android:inputType="textCapSentences"
             android:maxLines="4" />
         <ImageButton
             android:id="@+id/btnSend"

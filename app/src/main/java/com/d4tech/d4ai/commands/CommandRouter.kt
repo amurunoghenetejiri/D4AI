@@ -615,7 +615,7 @@ class CommandRouter(private val context: Context) {
             )
             "Opening battery saver settings."
         } catch (_: Exception) {
-            openSettingsAction(Settings.ACTION_BATTERY_SETTINGS, "Opening battery settings.")
+            openSettingsAction(Settings.ACTION_SETTINGS, "Opening settings.")
         }
     }
 
@@ -648,7 +648,7 @@ class CommandRouter(private val context: Context) {
             listOf("location settings") to Settings.ACTION_LOCATION_SOURCE_SETTINGS,
             listOf("date settings", "time settings") to Settings.ACTION_DATE_SETTINGS,
             listOf("accessibility") to Settings.ACTION_ACCESSIBILITY_SETTINGS,
-            listOf("notification settings") to Settings.ACTION_NOTIFICATION_SETTINGS,
+            listOf("notification settings") to "android.settings.NOTIFICATION_SETTINGS",
         )
         for ((keys, action) in map) {
             if (keys.any { lower.contains(it) }) {

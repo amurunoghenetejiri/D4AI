@@ -9,21 +9,19 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
@@ -34,20 +32,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-data class ChatMessage(val role: String, val text: String)
-
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var chatList: RecyclerView
+    private lateinit var chatContainer: LinearLayout
+    private lateinit var chatScroll: ScrollView
     private lateinit var input: EditText
     private lateinit var statusLine: TextView
     private lateinit var listenBanner: TextView
     private lateinit var btnAuto: Button
-    private lateinit var adapter: ChatAdapter
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
     private val scope = CoroutineScope(Dispatchers.Main + Job())
-    private val messages = mutableListOf<ChatMessage>()
     private var autoTalk = true
     private var busy = false
 
@@ -57,15 +52,12 @@ class MainActivity : AppCompatActivity() {
         PollinationsClient.init(applicationContext)
         router = CommandRouter(applicationContext)
 
-        chatList = findViewById(R.id.chatList)
+        chatContainer = findViewById(R.id.chatContainer)
+        chatScroll = findViewById(R.id.chatScroll)
         input = findViewById(R.id.input)
         statusLine = findViewById(R.id.statusLine)
         listenBanner = findViewById(R.id.listenBanner)
         btnAuto = findViewById(R.id.btnAuto)
-
-        adapter = ChatAdapter(messages)
-        chatList.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
-        chatList.adapter = adapter
 
         speech = SpeechEngine(
             context = this,
@@ -87,25 +79,23 @@ class MainActivity : AppCompatActivity() {
         }
         input.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
-                send(input.text.toString()); true
-            } else false
+                send(input.text.toString())
+                true
+            } else {
+                false
+            }
         }
         btnAuto.setOnClickListener {
             autoTalk = !autoTalk
             btnAuto.text = if (autoTalk) "Auto-talk On" else "Auto-talk"
         }
-        findViewById<ImageButton>(R.id.btnMenu).setOnClickListener { showMenu(it) }
+        findViewById<ImageButton>(R.id.btnMenu).setOnClickListener { v -> showMenu(v) }
 
-        if (messages.isEmpty()) {
-            append(
-                "ai",
-                "Hey! I'm D4AI — your personal Android assistant by D4TECH.\n\n" +
-                    "Ask anything, or try commands like: open WhatsApp, volume up, flashlight, " +
-                    "what is my phone storage. Say sleep to stop listening.",
-            )
-        }
-
-        // Assist should not open app; if launched normally, OK
+        append(
+            "ai",
+            "Hey! I'm D4AI — your personal Android assistant by D4TECH.\n\n" +
+                "Try: open WhatsApp, volume up, flashlight, what is my phone storage. Say sleep to stop listening.",
+        )
         ensureMic()
     }
 
@@ -118,7 +108,7 @@ class MainActivity : AppCompatActivity() {
             menu.add("Clear chat")
             menu.add("About")
             setOnMenuItemClickListener { item ->
-                when (item.title.toString()) {
+                when (item.title?.toString()) {
                     "Wake D4AI (background)" -> wakeBackground()
                     "Sleep D4AI" -> sleepBackground()
                     "Set as assistant" -> {
@@ -128,10 +118,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     "AI API key (unlimited)" -> promptApiKey()
-                    "Clear chat" -> {
-                        messages.clear()
-                        adapter.notifyDataSetChanged()
-                    }
+                    "Clear chat" -> chatContainer.removeAllViews()
                     "About" -> append(
                         "ai",
                         "D4AI by D4TECH — Creating Solutions, Innovating Lives.\nCreator: Amurun Destiny O.",
@@ -222,56 +209,51 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun append(role: String, text: String) {
-        messages.add(ChatMessage(role, text))
-        adapter.notifyItemInserted(messages.size - 1)
-        chatList.scrollToPosition(messages.size - 1)
+        val tv = TextView(this).apply {
+            this.text = text
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(28, 22, 28, 22)
+            val bg = GradientDrawable().apply {
+                cornerRadius = 36f
+                setColor(
+                    if (role == "user") Color.parseColor("#2563eb")
+                    else Color.parseColor("#0f2744"),
+                )
+            }
+            background = bg
+            maxWidth = (resources.displayMetrics.widthPixels * 0.82f).toInt()
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (role == "user") Gravity.END else Gravity.START
+            setPadding(0, 8, 0, 8)
+            addView(tv)
+        }
+        chatContainer.addView(row)
+        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun ensureMic() {
         val need = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
-        ) need.add(Manifest.permission.RECORD_AUDIO)
+        ) {
+            need.add(Manifest.permission.RECORD_AUDIO)
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
-        ) need.add(Manifest.permission.POST_NOTIFICATIONS)
-        if (need.isNotEmpty()) ActivityCompat.requestPermissions(this, need.toTypedArray(), 10)
+        ) {
+            need.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (need.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, need.toTypedArray(), 10)
+        }
     }
 
     override fun onDestroy() {
         speech.shutdown()
         super.onDestroy()
-    }
-}
-
-class ChatAdapter(private val items: List<ChatMessage>) :
-    RecyclerView.Adapter<ChatAdapter.VH>() {
-
-    class VH(view: View) : RecyclerView.ViewHolder(view) {
-        val bubble: TextView = view.findViewById(R.id.bubble)
-        val root: View = view
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_message, parent, false)
-        return VH(v)
-    }
-
-    override fun getItemCount() = items.size
-
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        val m = items[position]
-        holder.bubble.text = m.text
-        val user = m.role == "user"
-        val bg = GradientDrawable().apply {
-            cornerRadius = 36f
-            setColor(if (user) Color.parseColor("#2563eb") else Color.parseColor("#0f2744"))
-        }
-        holder.bubble.background = bg
-        val lp = holder.bubble.layoutParams as ViewGroup.MarginLayoutParams
-        (holder.root as android.widget.LinearLayout).gravity =
-            if (user) Gravity.END else Gravity.START
-        holder.bubble.layoutParams = lp
     }
 }
