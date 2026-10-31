@@ -2646,7 +2646,6 @@ function D4AiPage() {
               </button>
               {[
                 { icon: History, label: "Chat History", action: () => { setDrawer(false); setHistoryOpen(true); } },
-                { icon: Wrench, label: "Tools & Integrations", action: () => { setDrawer(false); setConnectionsOpen(true); } },
                 { icon: Phone, label: "Voice & Call", action: () => { setDrawer(false); startCallMode(); } },
                 { icon: Settings, label: "Settings", action: () => { setDrawer(false); setSettingsOpen(true); } },
                 { icon: Info, label: "About D4AI", action: () => { setDrawer(false); setAboutOpen(true); } },
