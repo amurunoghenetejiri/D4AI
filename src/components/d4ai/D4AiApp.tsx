@@ -65,8 +65,8 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  imagePreview?: string;
-  docName?: string;
+  imagePreview?: string | undefined;
+  docName?: string | undefined;
   createdAt?: number;
 };
 type Conversation = {
@@ -159,7 +159,7 @@ async function extractPdfText(file: File): Promise<string> {
       const page = await doc.getPage(i);
       const tc = await page.getTextContent();
       const line = tc.items
-        .map((it: unknown) => ("str" in it ? String((it as { str: string }).str) : ""))
+        .map((it) => String((it as { str?: string }).str ?? ""))
         .join(" ");
       if (line.trim()) parts.push(line.trim());
     }
@@ -1670,6 +1670,7 @@ function D4AiPage() {
     const opts: { imgs?: string[]; dText?: string; dName?: string } = {};
     const dText = docText || undefined;
     const dName = docName || undefined;
+    const imgs = imagePreview ? [imagePreview] : undefined;
     setInput("");
     setImageB64(null);
     setImagePreview(null);

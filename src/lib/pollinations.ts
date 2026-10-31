@@ -23,7 +23,7 @@ export async function askD4AI(
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ model: "openai", messages }),
-      signal,
+      signal: signal ?? null,
       cache: "no-store",
     });
     const raw = await res.text();
@@ -44,7 +44,7 @@ export async function askD4AI(
 
   const prompt = encodeURIComponent(`You are D4AI. ${message}`);
   const res2 = await fetch(`https://text.pollinations.ai/${prompt}`, {
-    signal,
+    signal: signal ?? null,
     cache: "no-store",
   });
   const t = (await res2.text()).trim();
