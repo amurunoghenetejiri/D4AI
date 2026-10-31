@@ -147,6 +147,18 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke(openApp("camera"))
         }
 
+        if (lower.contains("enable d4ai accessibility") || lower.contains("accessibility settings") || lower.contains("screen control settings")) {
+            return try {
+                context.startActivity(
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                RouteResult.Spoke("Opened Accessibility settings. Find D4AI screen control and enable it when you're ready.")
+            } catch (_: Exception) {
+                RouteResult.Spoke("I couldn't open Accessibility settings.")
+            }
+        }
+
         // Settings shortcuts
         if (lower.contains("mobile data") && (lower.contains("settings") || lower.contains("open") || lower.contains("turn on") || lower.contains("turn off"))) {
             return RouteResult.Spoke(system.openMobileDataSettings())
