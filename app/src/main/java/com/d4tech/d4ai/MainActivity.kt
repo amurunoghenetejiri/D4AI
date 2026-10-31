@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         want(Manifest.permission.RECORD_AUDIO)
+        want(Manifest.permission.CAMERA)
         want(Manifest.permission.CALL_PHONE)
         want(Manifest.permission.READ_CONTACTS)
         want(Manifest.permission.READ_EXTERNAL_STORAGE)
