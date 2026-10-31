@@ -1366,7 +1366,7 @@ function D4AiPage() {
   };
 
   const sendWithText = useCallback(
-    async (text: string, opts?: { imgs?: string[]; dText?: string; dName?: string }) => {
+    async (text: string, opts?: { imgs?: string[] | undefined; dText?: string | undefined; dName?: string | undefined }) => {
       if (busy) return;
       const body = text.trim();
       const imgs = opts?.imgs;
