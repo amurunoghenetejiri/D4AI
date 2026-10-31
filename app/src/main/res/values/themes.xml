@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.D4AI" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.D4AI" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">#3b82f6</item>
-        <item name="colorPrimaryDark">#0b1a3a</item>
-        <item name="colorAccent">#22d3ee</item>
         <item name="android:statusBarColor">#0b1a3a</item>
         <item name="android:navigationBarColor">#050b18</item>
         <item name="android:windowBackground">#050b18</item>

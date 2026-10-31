@@ -14,7 +14,6 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.d4tech.d4ai.MainActivity
 import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
@@ -22,12 +21,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
-/**
- * Offline Vosk wake-word + Google STT for the command.
- * Works with screen off as long as the foreground service keeps the mic.
- * Green mic indicator may show — required by Android 12+.
- */
 class D4AIWakeWordService : Service() {
 
     enum class State { LOADING, IDLE, ACTIVE, PAUSED, PROCESSING }
@@ -36,17 +31,28 @@ class D4AIWakeWordService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
-    private var vosk: VoskWakeEngine? = null
+    private var wakeEngine: ContinuousWakeEngine? = null
     private var state = State.LOADING
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val greetings = listOf(
-        "Yes, I'm here. What do you want me to do?",
-        "Hey! I'm listening — go ahead.",
-        "I'm right here. What's up?",
-        "Yes boss, tell me.",
-        "I heard you. How can I help?",
-    )
+    private fun greetingNow(): String {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val timePart = when {
+            hour < 12 -> listOf("Good morning!", "Morning!", "Hey, good morning.")
+            hour < 17 -> listOf("Good afternoon!", "Afternoon!", "Hey.")
+            else -> listOf("Good evening!", "Evening!", "Hey.")
+        }.random()
+        val body = listOf(
+            "I'm listening — what do you want me to do?",
+            "What's up? What should we do?",
+            "Yes boss, tell me.",
+            "I'm right here. How can I help?",
+            "Hey bro, what do you need?",
+            "Ready. What would you like me to do for you?",
+            "Okay, I'm listening.",
+        ).random()
+        return "$timePart $body"
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +67,7 @@ class D4AIWakeWordService : Service() {
             onSpeakDone = {
                 main.postDelayed({
                     if (state == State.PAUSED || state == State.PROCESSING) {
-                        resumeVosk()
+                        resumeWakeEngine()
                     }
                 }, 500)
             },
@@ -72,7 +78,7 @@ class D4AIWakeWordService : Service() {
             stopService(Intent(this, D4AiListenService::class.java))
         } catch (_: Exception) {
         }
-        vosk = VoskWakeEngine(
+        wakeEngine = ContinuousWakeEngine(
             context = this,
             onWake = { text -> main.post { onWakeWord(text) } },
             onStatus = { msg -> main.post { updateNotif(msg) } },
@@ -86,11 +92,11 @@ class D4AIWakeWordService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_PAUSE -> {
-                pauseVosk()
+                pauseWakeEngine()
                 return START_STICKY
             }
             ACTION_RESUME -> {
-                resumeVosk()
+                resumeWakeEngine()
                 return START_STICKY
             }
             ACTION_TALK, ACTION_WAKE_NOW -> {
@@ -99,29 +105,28 @@ class D4AIWakeWordService : Service() {
             }
             else -> {
                 isRunning = true
-                startForeground(NOTIF_ID, buildNotif("D4AI starting offline wake…"))
+                startForeground(NOTIF_ID, buildNotif("D4AI starting…"))
                 acquireWakeLock()
-                prepareVosk()
+                prepareWakeEngine()
             }
         }
         return START_STICKY
     }
 
-    private fun prepareVosk() {
+    private fun prepareWakeEngine() {
         state = State.LOADING
-        updateNotif("Preparing offline wake (first time may download model)…")
-        vosk?.prepare { ok, msg ->
+        updateNotif("Starting wake engine…")
+        wakeEngine?.prepare { ok, msg ->
             main.post {
                 if (!isRunning) return@post
                 if (ok) {
                     state = State.IDLE
                     updateNotif("Active • Say D4AI / D four / before AI")
-                    vosk?.start()
-                    Log.d(TAG, "Vosk started: $msg")
+                    wakeEngine?.start()
+                    Log.d(TAG, "Wake started: $msg")
                 } else {
-                    updateNotif("Offline model failed — tap Talk. $msg")
-                    Log.e(TAG, "Vosk failed: $msg")
-                    // Fallback: still allow notification Talk
+                    updateNotif("Tap Talk to speak • $msg")
+                    Log.e(TAG, "Wake failed: $msg")
                 }
             }
         }
@@ -134,17 +139,17 @@ class D4AIWakeWordService : Service() {
     }
 
     private fun forceConversation() {
-        pauseVosk()
+        pauseWakeEngine()
         state = State.ACTIVE
         beep()
-        val g = greetings.random()
+        val g = greetingNow()
         updateNotif("Listening…")
         speech.speak(g, listenAfter = false)
         main.postDelayed({
             if (!isRunning) return@postDelayed
             state = State.ACTIVE
             startCommandListen()
-        }, 1600)
+        }, 1700)
     }
 
     private fun startCommandListen() {
@@ -153,7 +158,6 @@ class D4AIWakeWordService : Service() {
             Log.d(TAG, "cmd=$cmd")
             if (cmd.isBlank()) {
                 speech.speak("Didn't catch that. Say D4AI again when you're ready.", listenAfter = false)
-                // onSpeakDone will resume vosk
                 state = State.PROCESSING
                 return@startListeningOnce
             }
@@ -164,7 +168,7 @@ class D4AIWakeWordService : Service() {
                 return@startListeningOnce
             }
             if (low == "sleep" || low.contains("go to sleep")) {
-                speech.speak("Sleeping. Activate me again from the app when you want.", listenAfter = false)
+                speech.speak("Sleeping. Activate me again when you want.", listenAfter = false)
                 main.postDelayed({ stopSelfSafe() }, 1600)
                 return@startListeningOnce
             }
@@ -174,7 +178,7 @@ class D4AIWakeWordService : Service() {
 
     private fun handleCommand(text: String) {
         state = State.PROCESSING
-        pauseVosk()
+        pauseWakeEngine()
         scope.launch {
             try {
                 when (val r = router.handle(text)) {
@@ -191,8 +195,7 @@ class D4AIWakeWordService : Service() {
                         main.postDelayed({
                             speech.startListeningOnce(12000) { ans ->
                                 if (ans.isBlank()) {
-                                    state = State.PROCESSING // resume via onSpeakDone path
-                                    resumeVosk()
+                                    resumeWakeEngine()
                                 } else {
                                     handleCommand(ans)
                                 }
@@ -212,7 +215,6 @@ class D4AIWakeWordService : Service() {
             } catch (_: Exception) {
                 speech.speak("Something went wrong. Try again.", listenAfter = false)
             }
-            // Vosk resumes in onSpeakDone
         }
     }
 
@@ -228,28 +230,28 @@ class D4AIWakeWordService : Service() {
         return msg
     }
 
-    private fun pauseVosk() {
+    private fun pauseWakeEngine() {
         state = State.PAUSED
-        vosk?.pause()
+        wakeEngine?.pause()
         speech.stopListening()
     }
 
-    private fun resumeVosk() {
+    private fun resumeWakeEngine() {
         if (!isRunning) return
         if (isMusicPlaying()) {
-            main.postDelayed({ resumeVosk() }, 800)
+            main.postDelayed({ resumeWakeEngine() }, 800)
             return
         }
         state = State.IDLE
         updateNotif("Active • Say D4AI / D four / before AI")
-        vosk?.resume()
-        if (vosk?.isRunning != true && vosk?.isReady == true) {
-            vosk?.start()
+        wakeEngine?.resume()
+        if (wakeEngine?.isRunning != true && wakeEngine?.isReady == true) {
+            wakeEngine?.start()
         }
     }
 
-    fun pauseWakeWord() = pauseVosk()
-    fun resumeWakeWord() = resumeVosk()
+    fun pauseWakeWord() = pauseWakeEngine()
+    fun resumeWakeWord() = resumeWakeEngine()
 
     private fun isMusicPlaying(): Boolean {
         return try {
@@ -271,7 +273,7 @@ class D4AIWakeWordService : Service() {
         try {
             if (wakeLock == null) {
                 val pm = getSystemService(PowerManager::class.java)
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "d4ai:vosk")
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "d4ai:wake")
                 wakeLock?.setReferenceCounted(false)
             }
             if (wakeLock?.isHeld != true) wakeLock?.acquire(60 * 60 * 1000L)
@@ -325,10 +327,10 @@ class D4AIWakeWordService : Service() {
     private fun stopSelfSafe() {
         isRunning = false
         try {
-            vosk?.release()
+            wakeEngine?.release()
         } catch (_: Exception) {
         }
-        vosk = null
+        wakeEngine = null
         try {
             speech.stopListening()
             speech.shutdown()
@@ -346,7 +348,7 @@ class D4AIWakeWordService : Service() {
     override fun onDestroy() {
         isRunning = false
         try {
-            vosk?.release()
+            wakeEngine?.release()
         } catch (_: Exception) {
         }
         instance = null

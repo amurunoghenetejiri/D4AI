@@ -4,10 +4,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
-import com.d4tech.d4ai.voice.D4AiListenService
+import com.d4tech.d4ai.voice.D4AIWakeWordService
 
 /**
- * Assist / long-press Home → wake D4AI in background only (no full UI).
+ * Long-press Home / headset assist → start listening.
+ * Does NOT open MainActivity or the Digital Assistant settings page.
  */
 class D4AiSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession {
@@ -15,22 +16,23 @@ class D4AiSessionService : VoiceInteractionSessionService() {
             override fun onShow(args: Bundle?, showFlags: Int) {
                 super.onShow(args, showFlags)
                 try {
-                    val wake = Intent(context, D4AiListenService::class.java).apply {
-                        action = D4AiListenService.ACTION_WAKE
+                    if (!D4AIWakeWordService.isRunning) {
+                        D4AIWakeWordService.start(context)
                     }
-                    context.startForegroundService(wake)
-                } catch (_: Exception) {
+                    val talk = Intent(context, D4AIWakeWordService::class.java).apply {
+                        action = D4AIWakeWordService.ACTION_TALK
+                    }
                     try {
-                        context.startService(
-                            Intent(context, D4AiListenService::class.java).apply {
-                                action = D4AiListenService.ACTION_WAKE
-                            },
-                        )
+                        context.startForegroundService(talk)
                     } catch (_: Exception) {
+                        context.startService(talk)
                     }
+                } catch (_: Exception) {
                 }
-                // Stay in background — do not open MainActivity
-                hide()
+                try {
+                    hide()
+                } catch (_: Exception) {
+                }
             }
         }
     }

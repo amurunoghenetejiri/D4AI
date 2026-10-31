@@ -18,7 +18,6 @@ import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
 import com.d4tech.d4ai.voice.D4AiListenService
-import com.d4tech.d4ai.VoiceEnrollmentActivity
 import com.d4tech.d4ai.voice.SpeechEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * D4EXAM-style chat UI (WebView assets) + native voice/commands.
+ * D4AI full app — D4EXAM-style UI in WebView + native voice/commands.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -38,10 +37,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        PollinationsClient.init(applicationContext)
-        router = CommandRouter(applicationContext)
 
+        router = CommandRouter(applicationContext)
         speech = SpeechEngine(
             context = this,
             onHeard = { text ->
@@ -58,41 +55,78 @@ class MainActivity : AppCompatActivity() {
         )
         speech.init { }
 
-        web = findViewById(R.id.web)
+        web = WebView(this)
+        setContentView(web)
         val s = web.settings
         s.javaScriptEnabled = true
         s.domStorageEnabled = true
         s.allowFileAccess = true
+        s.cacheMode = WebSettings.LOAD_DEFAULT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
             s.allowUniversalAccessFromFileURLs = true
             s.allowFileAccessFromFileURLs = true
         }
-        s.cacheMode = WebSettings.LOAD_DEFAULT
         web.webViewClient = WebViewClient()
         web.addJavascriptInterface(Bridge(), "D4AI")
         web.loadUrl("file:///android_asset/www/index.html")
 
         ensurePerms()
+
+        if (intent?.action == Intent.ACTION_ASSIST ||
+            intent?.action == Intent.ACTION_VOICE_COMMAND
+        ) {
+            wakeNative()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == Intent.ACTION_ASSIST || intent.action == Intent.ACTION_VOICE_COMMAND) {
+            wakeNative()
+        }
     }
 
     private fun ensurePerms() {
         val need = mutableListOf<String>()
-        fun want(p: String) {
-            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
-                need.add(p)
-            }
-        }
-        want(Manifest.permission.RECORD_AUDIO)
-        want(Manifest.permission.CALL_PHONE)
-        want(Manifest.permission.READ_CONTACTS)
-        want(Manifest.permission.READ_EXTERNAL_STORAGE)
-        if (Build.VERSION.SDK_INT >= 33) {
-            want(Manifest.permission.POST_NOTIFICATIONS)
-            want(Manifest.permission.READ_MEDIA_AUDIO)
-        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) need.add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) need.add(Manifest.permission.POST_NOTIFICATIONS)
         if (need.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, need.toTypedArray(), 100)
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 100 && grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            // ready to listen
+        }
+    }
+
+    private fun wakeNative() {
+        ensurePerms()
+        val i = Intent(this, D4AiListenService::class.java).apply {
+            action = D4AiListenService.ACTION_WAKE
+        }
+        try {
+            ContextCompat.startForegroundService(this, i)
+        } catch (_: Exception) {
+            startService(i)
+        }
+        // Also listen in-activity for reliable mic on many OEMs
+        speech.speak("D4AI listening", listenAfter = true)
+        eval("window.onD4AIStatus('D4AI listening…')")
     }
 
     private fun eval(js: String) {
@@ -113,48 +147,33 @@ class MainActivity : AppCompatActivity() {
                         is RouteResult.Spoke -> {
                             if (r.message == "__SLEEP__") {
                                 speech.speak("D4AI sleeping", listenAfter = false)
-                                deliver(true, "Going to sleep.")
-                                startService(
-                                    Intent(this@MainActivity, D4AiListenService::class.java)
-                                        .setAction(D4AiListenService.ACTION_SLEEP),
-                                )
-                            } else {
-                                // Speak action feedback (opening WhatsApp, etc.)
-                                com.d4tech.d4ai.voice.D4AIWakeWordService.pause(this@MainActivity)
-                                speech.speak(r.message, listenAfter = false)
-                                deliver(true, r.message)
+                                deliverAsk(true, "Going to sleep.")
+                                return@launch
                             }
+                            deliverAsk(true, r.message)
+                            return@launch
                         }
                         is RouteResult.NeedConfirm -> {
-                            speech.speak(r.prompt, listenAfter = true)
-                            deliver(true, r.prompt)
+                            deliverAsk(true, r.prompt)
+                            return@launch
                         }
                         RouteResult.NotCommand -> {
-                            val thinking = listOf(
-                                "One moment…",
-                                "Thinking…",
-                                "Let me check…",
-                                "Working on that…",
-                                "Hmm, give me a second…",
-                            ).random()
-                            runOnUiThread {
-                                speech.speak(thinking, listenAfter = false)
-                                deliver(true, thinking)
-                            }
                             val answer = PollinationsClient.ask(message)
-                            speech.speak(answer, listenAfter = false)
-                            deliver(true, answer)
+                            deliverAsk(true, answer)
                         }
                     }
                 } catch (e: Exception) {
-                    deliver(false, e.message ?: "Failed")
+                    deliverAsk(false, e.message ?: "Failed")
                 }
             }
         }
 
-        private fun deliver(ok: Boolean, msg: String) {
+        private fun deliverAsk(ok: Boolean, msg: String) {
             runOnUiThread {
-                eval("if(window._d4aiAskCb)window._d4aiAskCb($ok,${jsonString(msg)})")
+                eval(
+                    "if(window._d4aiAskCb)window._d4aiAskCb(" +
+                        ok + "," + jsonString(msg) + ")",
+                )
             }
         }
 
@@ -167,6 +186,14 @@ class MainActivity : AppCompatActivity() {
         fun listen() {
             runOnUiThread {
                 ensurePerms()
+                if (ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    eval("window.onD4AIStatus('Allow microphone permission')")
+                    return@runOnUiThread
+                }
                 speech.startListening()
                 eval("window.onD4AIStatus('D4AI listening…')")
             }
@@ -174,16 +201,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun wake() {
-            runOnUiThread {
-                ensurePerms()
-                val i = Intent(this@MainActivity, D4AiListenService::class.java)
-                    .setAction(D4AiListenService.ACTION_WAKE)
-                try {
-                    ContextCompat.startForegroundService(this@MainActivity, i)
-                } catch (_: Exception) {
-                    startService(i)
-                }
-            }
+            runOnUiThread { wakeNative() }
         }
 
         @JavascriptInterface
@@ -192,62 +210,20 @@ class MainActivity : AppCompatActivity() {
                 speech.stopListening()
                 speech.speak("D4AI sleeping", listenAfter = false)
                 startService(
-                    Intent(this@MainActivity, D4AiListenService::class.java)
-                        .setAction(D4AiListenService.ACTION_SLEEP),
+                    Intent(this@MainActivity, D4AiListenService::class.java).apply {
+                        action = D4AiListenService.ACTION_SLEEP
+                    },
                 )
-            }
-        }
-
-        @JavascriptInterface
-        fun setApiKey(key: String) {
-            PollinationsClient.setApiKey(applicationContext, key)
-        }
-
-        
-        @JavascriptInterface
-        fun activateBackground() {
-            runOnUiThread {
-                ensurePerms()
-                // Battery optimization tip
-                try {
-                    val pm = getSystemService(android.os.PowerManager::class.java)
-                    if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                android.net.Uri.parse("package:$packageName"),
-                            ),
-                        )
-                    }
-                } catch (_: Exception) {
-                }
-                getSharedPreferences("d4ai", MODE_PRIVATE).edit().putBoolean("wake_on_boot", true).apply()
-                com.d4tech.d4ai.voice.D4AIWakeWordService.start(this@MainActivity)
-                speech.speak("Background listening on. Say D4AI to wake me.", listenAfter = false)
-            }
-        }
-
-        @JavascriptInterface
-        fun stopBackground() {
-            runOnUiThread {
-                com.d4tech.d4ai.voice.D4AIWakeWordService.stop(this@MainActivity)
-                getSharedPreferences("d4ai", MODE_PRIVATE).edit().putBoolean("wake_on_boot", false).apply()
-                speech.speak("Background listening off.", listenAfter = false)
-            }
-        }
-
-        @JavascriptInterface
-        fun openEnrollment() {
-            runOnUiThread {
-                startActivity(Intent(this@MainActivity, VoiceEnrollmentActivity::class.java))
+                eval("window.onD4AIStatus('')")
             }
         }
 
         @JavascriptInterface
         fun openAssistSettings() {
             try {
-                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+                startActivity(Intent("android.settings.VOICE_INPUT_SETTINGS"))
             } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
             }
         }
     }
