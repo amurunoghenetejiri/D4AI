@@ -935,6 +935,34 @@ class CommandRouter(private val context: Context) {
             else -> "Hello! I'm D4AI. What would you like me to do?"
         }
     }
+
+    private fun webSearch(query: String): String {
+        return try {
+            val uri = Uri.parse("https://www.google.com/search?q=" + Uri.encode(query))
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "Searching Google for $query."
+        } catch (e: Exception) {
+            "Couldn't open search: ${e.message}"
+        }
+    }
+
+    private fun handleInAppFollowUp(app: String, request: String): RouteResult {
+        val lower = request.lowercase()
+        val appL = app.lowercase()
+        if (appL.contains("calculator") || appL.contains("calc")) {
+            return RouteResult.Spoke("Tell me the expression to calculate, for example 25 times 4.")
+        }
+        if (appL.contains("chrome") || appL.contains("browser") || appL.contains("google")) {
+            val q = request.replace(Regex("(?i)search\s*(for)?"), "").trim()
+            if (q.isNotEmpty()) return RouteResult.Spoke(webSearch(q))
+            return RouteResult.Spoke("What should I search for?")
+        }
+        if (appL.contains("whatsapp")) {
+            return RouteResult.Spoke("Who should I message, and what should I say?")
+        }
+        return RouteResult.Spoke("Okay. Tell me what you'd like me to do in $app.")
+    }
+
     private fun offerAfterOpen(result: String, appName: String): RouteResult {
         if (result.startsWith("App not found") || result.startsWith("Couldn't") || result.startsWith("Which")) {
             return RouteResult.Spoke(result)
