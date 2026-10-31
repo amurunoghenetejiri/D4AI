@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
             },
         )
         speech.init { }
+        PollinationsClient.init(applicationContext)
 
         setContentView(R.layout.activity_main)
         web = findViewById(R.id.web)
@@ -232,6 +233,11 @@ class MainActivity : AppCompatActivity() {
                 )
                 eval("window.onD4AIStatus('')")
             }
+        }
+
+        @JavascriptInterface
+        fun setApiKey(key: String) {
+            PollinationsClient.setApiKey(applicationContext, key)
         }
 
         @JavascriptInterface

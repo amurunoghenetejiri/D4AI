@@ -1,6 +1,8 @@
 package com.d4tech.d4ai.ai
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -8,37 +10,126 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
- * D4AI brain via Pollinations (OpenAI-compatible chat).
- * Model is presented to the user always as D4AI.
+ * D4AI brain via Pollinations.
+ *
+ * Strategy (avoids "1 reply / 45s" when possible):
+ * 1. If user set a secret sk_ key → gen.pollinations.ai (no rate limit)
+ * 2. Legacy free models on text.pollinations.ai (gpt-oss-20b, openai-fast, …)
+ * 3. GET plain-text endpoint
+ * 4. Retry with backoff if rate-limited
+ *
+ * Get a free key: https://enter.pollinations.ai
+ * Put it in app settings later, or set POLLINATIONS_KEY in assets/d4ai_config.json
  */
 object PollinationsClient {
-    private const val BASE = "https://text.pollinations.ai/openai"
+
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(25, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
+    @Volatile
+    private var apiKey: String = ""
+
+    /** Call once from Application / MainActivity with app context. */
+    fun init(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences("d4ai", Context.MODE_PRIVATE)
+            apiKey = prefs.getString("pollinations_key", "").orEmpty().trim()
+            if (apiKey.isEmpty()) {
+                // optional bundled config
+                context.assets.open("d4ai_config.json").bufferedReader().use { r ->
+                    val j = JSONObject(r.readText())
+                    apiKey = j.optString("pollinations_key", "").trim()
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    fun setApiKey(context: Context, key: String) {
+        apiKey = key.trim()
+        context.getSharedPreferences("d4ai", Context.MODE_PRIVATE)
+            .edit().putString("pollinations_key", apiKey).apply()
+    }
+
     private val systemPrompt = """
-        You are D4AI — a personal Android phone assistant by D4TECH
+        You are D4AI — the personal Android AI assistant by D4TECH
         (Creating Solutions, Innovating Lives). Creator: Amurun Destiny O.
 
-        Rules:
-        - Always identify as D4AI (never other product names).
-        - Be clear, helpful, and complete your sentences.
-        - For pure questions, answer helpfully.
-        - For device commands, the phone OS handles actions; you may briefly confirm.
-        - Keep spoken answers reasonably concise unless the user asks for detail.
+        Identity:
+        - Always call yourself D4AI. Never say you are ChatGPT, Claude, Gemini, Grok, or Pollinations.
+        - You are a phone assistant: helpful, clear, friendly, and complete your thoughts.
+
+        Behavior:
+        - Answer questions fully and usefully.
+        - Device commands (open apps, volume, calls, etc.) are handled by the phone OS; confirm briefly when relevant.
+        - If the user asks your name: "I'm D4AI, your personal Android assistant by D4TECH."
+        - Prefer practical answers. Use short paragraphs.
+        - Do not mention rate limits, API keys, or underlying model providers.
     """.trimIndent()
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
+        val attempts = buildList {
+            // 1) Authenticated gen API (unlimited with sk_)
+            if (apiKey.isNotEmpty()) {
+                add(Endpoint.Chat("https://gen.pollinations.ai/v1/chat/completions", "openai", true))
+                add(Endpoint.Chat("https://gen.pollinations.ai/v1/chat/completions", "openai-fast", true))
+            }
+            // 2) Legacy free OpenAI-compatible host (keyless)
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "gpt-oss-20b", false))
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai-fast", false))
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai", false))
+            add(Endpoint.Chat("https://text.pollinations.ai/openai/chat/completions", "gpt-oss-20b", false))
+            // 3) Simple GET
+            add(Endpoint.Get)
+        }
+
+        var lastRateLimit: String? = null
+        for ((index, ep) in attempts.withIndex()) {
+            try {
+                val result = when (ep) {
+                    is Endpoint.Chat -> postChat(ep.url, ep.model, ep.auth, userMessage)
+                    Endpoint.Get -> getPlain(userMessage)
+                }
+                if (result != null) {
+                    if (isRateLimitText(result)) {
+                        lastRateLimit = result
+                        delay(400L * (index + 1))
+                        continue
+                    }
+                    return@withContext sanitize(result)
+                }
+            } catch (_: Exception) {
+                delay(200)
+            }
+        }
+
+        // Final soft retry on GET after short wait
+        delay(1500)
+        try {
+            val again = getPlain(userMessage)
+            if (again != null && !isRateLimitText(again)) return@withContext sanitize(again)
+        } catch (_: Exception) {
+        }
+
+        "I'm a bit busy on the free network lane right now. " +
+            "Commands like open WhatsApp, volume up, or flashlight still work offline. " +
+            "Try the question again in a moment" +
+            if (lastRateLimit != null) "." else "."
+    }
+
+    private fun postChat(url: String, model: String, auth: Boolean, userMessage: String): String? {
         val body = JSONObject()
-            .put("model", "openai")
+            .put("model", model)
             .put(
                 "messages",
                 JSONArray()
@@ -47,40 +138,71 @@ object PollinationsClient {
             )
             .toString()
 
-        val req = Request.Builder()
-            .url(BASE)
+        val builder = Request.Builder()
+            .url(url)
             .post(body.toRequestBody(jsonType))
             .header("Content-Type", "application/json")
-            .build()
+            .header("Accept", "application/json")
+        if (auth && apiKey.isNotEmpty()) {
+            builder.header("Authorization", "Bearer $apiKey")
+        }
 
-        http.newCall(req).execute().use { res ->
+        http.newCall(builder.build()).execute().use { res ->
             val raw = res.body?.string().orEmpty()
-            if (!res.isSuccessful) {
-                // Fallback: simple GET prompt API
-                return@withContext askGetFallback(userMessage)
-            }
+            if (res.code == 429 || isRateLimitText(raw)) return raw.ifBlank { "rate limit" }
+            if (!res.isSuccessful) return null
             try {
                 val json = JSONObject(raw)
                 val choices = json.optJSONArray("choices")
                 if (choices != null && choices.length() > 0) {
-                    val msg = choices.getJSONObject(0).optJSONObject("message")
-                    val content = msg?.optString("content").orEmpty().trim()
-                    if (content.isNotEmpty()) return@withContext content
+                    val content = choices.getJSONObject(0)
+                        .optJSONObject("message")
+                        ?.optString("content")
+                        .orEmpty()
+                        .trim()
+                    if (content.isNotEmpty()) return content
                 }
             } catch (_: Exception) {
             }
-            if (raw.isNotBlank()) raw.trim() else askGetFallback(userMessage)
+            return raw.trim().takeIf { it.isNotEmpty() && !it.trimStart().startsWith("{") }
         }
     }
 
-    private fun askGetFallback(userMessage: String): String {
-        val prompt = "You are D4AI. $userMessage"
+    private fun getPlain(userMessage: String): String? {
+        val prompt = "System: $systemPrompt\nUser: $userMessage\nD4AI:"
         val url = "https://text.pollinations.ai/" +
-            java.net.URLEncoder.encode(prompt, Charsets.UTF_8.name())
-        val req = Request.Builder().url(url).get().build()
+            URLEncoder.encode(prompt, Charsets.UTF_8.name()) +
+            "?model=gpt-oss-20b"
+        val req = Request.Builder().url(url).get().header("Accept", "text/plain").build()
         http.newCall(req).execute().use { res ->
             val t = res.body?.string().orEmpty().trim()
-            return t.ifBlank { "I couldn't reach the D4AI model right now. Please try again." }
+            if (!res.isSuccessful && t.isEmpty()) return null
+            return t.takeIf { it.isNotEmpty() }
         }
+    }
+
+    private fun isRateLimitText(s: String): Boolean {
+        val l = s.lowercase()
+        return l.contains("rate limit") ||
+            l.contains("free limit reached") ||
+            l.contains("pollen") && l.contains("limit") ||
+            l.contains("please wait") && l.contains("second") ||
+            l.contains("1 reply every")
+    }
+
+    private fun sanitize(s: String): String {
+        // Never show provider billing text to the user as an "answer"
+        if (isRateLimitText(s)) {
+            return "Please try that again in a few seconds — the free lane was busy."
+        }
+        return s.trim()
+            .replace(Regex("(?i)as an ai language model"), "As D4AI")
+            .replace(Regex("(?i)i'm chatgpt"), "I'm D4AI")
+            .replace(Regex("(?i)i am chatgpt"), "I am D4AI")
+    }
+
+    private sealed class Endpoint {
+        data class Chat(val url: String, val model: String, val auth: Boolean) : Endpoint()
+        data object Get : Endpoint()
     }
 }
