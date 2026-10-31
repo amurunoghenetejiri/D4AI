@@ -59,7 +59,6 @@ class D4AIWakeWordService : Service() {
         instance = this
         isRunning = true
         router = CommandRouter(this)
-        PollinationsClient.init(this)
         speech = SpeechEngine(
             context = this,
             onHeard = {},
