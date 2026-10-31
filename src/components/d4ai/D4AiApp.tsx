@@ -42,18 +42,38 @@ import {
   ThumbsUp,
   Trash2,
   Volume2,
-  Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { askD4AI } from "@/lib/pollinations";
 import { appNavigate } from "@/lib/app-navigate";
 import { useSessionUser } from "@/lib/session";
-import {
-  D4AiConnectionsSheet,
-  isD4AiOwner,
-  readGithubToken,
-} from "@/components/d4ai/D4AiConnections";
+import type { SessionUser } from "@/lib/session";
+
+export function isD4AiOwner(session: SessionUser | null | undefined): boolean {
+  if (!session) return false;
+  const email = String(session.email || "").trim().toLowerCase();
+  const name = String(session.fullName || "").trim().toLowerCase();
+  const ownerEmails = (
+    (typeof import.meta !== "undefined" &&
+      (import.meta as { env?: Record<string, string> }).env?.["VITE_D4AI_OWNER_EMAILS"]) ||
+    "amurundestiny@gmail.com,amurunoghenetejiri@gmail.com"
+  )
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (ownerEmails.includes(email)) return true;
+  if (email.startsWith("amurun") && email.endsWith("@gmail.com")) return true;
+  if (session.roles?.includes("super_admin") && email.includes("amurun")) return true;
+  if (
+    name.includes("amurun") &&
+    (name.includes("destiny") || name.includes("oghenetejiri"))
+  ) {
+    return true;
+  }
+  return false;
+}
 
 /** Standalone D4AI app root */
 export default function D4AiApp() {
