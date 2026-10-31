@@ -58,6 +58,25 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke(openApp(appName))
         }
 
+        // Alarm: Android Clock presents the alarm for the user to review and save.
+        val alarmMatch = Regex(
+            "^(?:set\\s+)?alarm(?:\\s+for)?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?$",
+            RegexOption.IGNORE_CASE,
+        ).find(text)
+        if (alarmMatch != null) {
+            val hourRaw = alarmMatch.groupValues[1].toIntOrNull() ?: -1
+            val minute = alarmMatch.groupValues[2].ifBlank { "0" }.toIntOrNull() ?: 0
+            val meridiem = alarmMatch.groupValues[3].lowercase()
+            if (hourRaw in 1..12 && minute in 0..59) {
+                val hour = when (meridiem) {
+                    "am" -> if (hourRaw == 12) 0 else hourRaw
+                    "pm" -> if (hourRaw == 12) 12 else hourRaw + 12
+                    else -> hourRaw
+                }
+                return RouteResult.Spoke(setAlarm(hour, minute))
+            }
+        }
+
         // Call
         val callMatch = Regex("^(call|dial)\\s+([0-9+\\s]+)$", RegexOption.IGNORE_CASE).find(text)
         if (callMatch != null) {
@@ -134,9 +153,12 @@ class CommandRouter(private val context: Context) {
 
     private fun openApp(name: String): String {
         val pm = context.packageManager
-        val n = name.lowercase().trim()
+        val n = name.lowercase()
+            .replace(Regex("\\b(app|application|account)\\b"), " ")
+            .trim()
         val aliases = mapOf(
             "whatsapp" to listOf("com.whatsapp", "com.whatsapp.w4b"),
+            "telegram" to listOf("org.telegram.messenger"),
             "chrome" to listOf("com.android.chrome"),
             "camera" to listOf("com.android.camera", "com.android.camera2", "com.google.android.GoogleCamera"),
             "settings" to listOf("com.android.settings"),
@@ -145,32 +167,71 @@ class CommandRouter(private val context: Context) {
             "maps" to listOf("com.google.android.apps.maps"),
             "phone" to listOf("com.android.dialer", "com.google.android.dialer"),
         )
-        val pkgs = aliases[n]
-        if (pkgs != null) {
-            for (pkg in pkgs) {
-                val launch = pm.getLaunchIntentForPackage(pkg)
-                if (launch != null) {
+        val packages = aliases[n].orEmpty()
+        for (pkg in packages) {
+            val launch = pm.getLaunchIntentForPackage(pkg)
+            if (launch != null) {
+                return try {
                     launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(launch)
-                    return "Opening $name."
+                    "Opening $n."
+                } catch (_: Exception) {
+                    "I found $n, but Android did not allow it to open."
                 }
             }
         }
-        // Search installed apps by label
-        val main = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = pm.queryIntentActivities(main, PackageManager.MATCH_ALL)
+
+        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = try {
+            pm.queryIntentActivities(main, PackageManager.MATCH_ALL)
+        } catch (_: Exception) {
+            emptyList()
+        }
         val hit = apps.firstOrNull {
+            it.loadLabel(pm).toString().trim().equals(n, ignoreCase = true)
+        } ?: apps.firstOrNull {
             it.loadLabel(pm).toString().lowercase().contains(n)
         }
         if (hit != null) {
             val launch = pm.getLaunchIntentForPackage(hit.activityInfo.packageName)
             if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(launch)
-                return "Opening ${hit.loadLabel(pm)}."
+                return try {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launch)
+                    "Opening ${hit.loadLabel(pm)}."
+                } catch (_: Exception) {
+                    "I found ${hit.loadLabel(pm)}, but Android did not allow it to open."
+                }
             }
         }
-        return "I couldn't find the app $name."
+
+        return try {
+            val knownPackage = packages.firstOrNull()
+            val store = if (knownPackage != null) {
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$knownPackage"))
+            } else {
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=${Uri.encode(n)}"))
+            }
+            store.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(store)
+            "$n is not installed. I opened Google Play so you can install it."
+        } catch (_: Exception) {
+            "I couldn't find $n installed, and Google Play could not be opened. Search for $n in the Play Store."
+        }
+    }
+
+    private fun setAlarm(hour: Int, minute: Int): String {
+        return try {
+            val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+                .putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
+                .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+                .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            "Opening your Clock app to set the alarm. Please save it there."
+        } catch (_: Exception) {
+            "I couldn't open the Clock app to set that alarm."
+        }
     }
 
     private fun adjustVolume(steps: Int) {
