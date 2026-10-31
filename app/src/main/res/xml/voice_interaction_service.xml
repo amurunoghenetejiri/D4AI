@@ -3,5 +3,4 @@
     android:sessionService="com.d4tech.d4ai.assistant.D4AiSessionService"
     android:recognitionService="com.d4tech.d4ai.assistant.D4AiRecognitionService"
     android:supportsAssist="true"
-    android:supportsLaunchFromKeyguard="true"
     android:supportsLocalInteraction="true" />
