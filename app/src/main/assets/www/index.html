@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>D4AI</title>
+<style>
+  :root {
+    --bg: #050b18;
+    --panel: #0b1a3a;
+    --panel2: #0f2744;
+    --accent: #3b82f6;
+    --accent2: #22d3ee;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --bubble-ai: #0f2744;
+    --bubble-user: #2563eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; background: linear-gradient(180deg, #0b1a3a, #071225);
+    border-bottom: 1px solid #132744; flex-shrink: 0;
+  }
+  header img.logo { width: 40px; height: 40px; border-radius: 50%; }
+  header .titles { flex: 1; min-width: 0; }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header p { font-size: 11px; color: #34d399; }
+  header p span { color: var(--muted); }
+  .pill {
+    background: #0e7490; color: #fff; border: none; border-radius: 999px;
+    padding: 6px 12px; font-size: 12px; font-weight: 600;
+  }
+  .icon-btn {
+    background: transparent; border: none; color: var(--text);
+    font-size: 20px; padding: 6px; line-height: 1;
+  }
+  #welcome {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 20px; text-align: center; gap: 10px;
+  }
+  #welcome img { width: 140px; height: 140px; filter: drop-shadow(0 0 24px #3b82f680); animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%,100% { transform: scale(1); filter: drop-shadow(0 0 16px #3b82f680); }
+    50% { transform: scale(1.04); filter: drop-shadow(0 0 28px #22d3eeaa); }
+  }
+  #welcome h2 { font-size: 28px; letter-spacing: 1px; }
+  #welcome .brand { font-size: 11px; letter-spacing: 4px; color: var(--accent2); }
+  #welcome .motto { color: var(--muted); font-size: 13px; }
+  #welcome .card {
+    margin-top: 12px; background: var(--bubble-ai); border-radius: 16px;
+    padding: 14px 16px; text-align: left; max-width: 360px; font-size: 14px; line-height: 1.45;
+    border: 1px solid #1e3a5f;
+  }
+  #chat {
+    flex: 1; overflow-y: auto; padding: 14px; display: none; flex-direction: column; gap: 12px;
+  }
+  .row { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; }
+  .row.user { flex-direction: row-reverse; }
+  .row img.av { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+  .bubble {
+    max-width: 82%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .row.ai .bubble { background: var(--bubble-ai); border: 1px solid #1e3a5f; border-bottom-left-radius: 4px; }
+  .row.user .bubble { background: var(--bubble-user); border-bottom-right-radius: 4px; }
+  .status-line {
+    text-align: center; font-size: 12px; color: var(--accent2); padding: 4px;
+    display: none;
+  }
+  footer {
+    display: flex; gap: 8px; align-items: center; padding: 10px 12px 14px;
+    background: #071225; border-top: 1px solid #132744; flex-shrink: 0;
+  }
+  footer input {
+    flex: 1; background: #0b1a3a; border: 1px solid #1e3a5f; border-radius: 999px;
+    color: var(--text); padding: 12px 16px; font-size: 14px; outline: none;
+  }
+  footer button.mic, footer button.send {
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: linear-gradient(135deg, #2563eb, #06b6d4); color: #fff; font-size: 18px;
+  }
+  footer button.mic.listening { background: #dc2626; animation: pulse 1s infinite; }
+  #drawer {
+    position: fixed; inset: 0; background: #000a; display: none; z-index: 20;
+  }
+  #drawer.open { display: block; }
+  #drawer .panel {
+    width: 82%; max-width: 320px; height: 100%; background: #071225;
+    padding: 16px; overflow-y: auto;
+  }
+  #drawer .item {
+    display: flex; align-items: center; gap: 12px; padding: 14px 8px;
+    border-bottom: 1px solid #132744; font-size: 15px; color: var(--text);
+  }
+  #drawer .newchat {
+    background: var(--accent); border: none; color: #fff; width: 100%;
+    border-radius: 12px; padding: 14px; font-weight: 600; margin-bottom: 12px;
+  }
+  .quick { color: var(--muted); font-size: 11px; margin: 16px 0 8px; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <img class="logo" src="file:///android_asset/d4ai_logo.png" alt="D4AI"/>
+    <div class="titles">
+      <h1>D4AI</h1>
+      <p>● Online <span>· v5-Ultimate</span></p>
+    </div>
+    <button class="pill" id="btnAuto" type="button">Auto-talk On</button>
+    <button class="icon-btn" id="btnMenu" type="button">☰</button>
+  </header>
+
+  <div id="statusLine" class="status-line">D4AI listening…</div>
+
+  <div id="welcome">
+    <img src="file:///android_asset/d4ai_logo.png" alt=""/>
+    <h2>D4AI</h2>
+    <div class="brand">D 4 T E C H</div>
+    <div class="motto">Creating Solutions. Innovating Lives.</div>
+    <div class="card">
+      Hey! 👋 I'm <b>D4AI</b> — your AI buddy.<br/><br/>
+      I'm here anytime you need help: study, code, ideas, or phone commands. Talk to me like a friend.<br/><br/>
+      Introduce yourself and ask me anything — what's on your mind?
+    </div>
+  </div>
+
+  <div id="chat"></div>
+
+  <footer>
+    <button class="mic" id="btnMic" type="button" title="Voice">🎤</button>
+    <input id="input" placeholder="Message D4AI..." autocomplete="off"/>
+    <button class="send" id="btnSend" type="button">➤</button>
+  </footer>
+</div>
+
+<div id="drawer">
+  <div class="panel">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <img src="file:///android_asset/d4ai_logo.png" width="36" height="36" style="border-radius:50%"/>
+      <div>
+        <div style="font-weight:700">D4AI</div>
+        <div style="font-size:11px;color:#34d399">● Online · v5-Ultimate</div>
+      </div>
+      <button class="icon-btn" id="btnClose" style="margin-left:auto">✕</button>
+    </div>
+    <button class="newchat" id="btnNew">＋ New Chat</button>
+    <div class="item" data-act="history">🕐 Chat History</div>
+    <div class="item" data-act="tools">🔧 Tools & Integrations</div>
+    <div class="item" data-act="voice">📞 Voice & Call</div>
+    <div class="item" data-act="settings">⚙️ Settings</div>
+    <div class="item" data-act="about">ℹ About D4AI</div>
+    <div class="quick">QUICK ACTIONS</div>
+    <div class="item" data-act="clear">🗑 Clear Chat</div>
+    <div class="item" data-act="wake">▶ Wake D4AI</div>
+    <div class="item" data-act="sleep">⏸ Sleep D4AI</div>
+    <div class="item" data-act="assist">🎙 Set as assistant</div>
+  </div>
+</div>
+
+<script>
+  const chatEl = document.getElementById('chat');
+  const welcome = document.getElementById('welcome');
+  const input = document.getElementById('input');
+  const statusLine = document.getElementById('statusLine');
+  const btnMic = document.getElementById('btnMic');
+  let autoTalk = true;
+  let busy = false;
+
+  function showChat() {
+    welcome.style.display = 'none';
+    chatEl.style.display = 'flex';
+  }
+
+  function addBubble(role, text) {
+    showChat();
+    const row = document.createElement('div');
+    row.className = 'row ' + (role === 'user' ? 'user' : 'ai');
+    if (role !== 'user') {
+      const img = document.createElement('img');
+      img.className = 'av';
+      img.src = 'file:///android_asset/d4ai_logo.png';
+      row.appendChild(img);
+    }
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    b.textContent = text;
+    row.appendChild(b);
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return b;
+  }
+
+  async function sendText(text) {
+    text = (text || '').trim();
+    if (!text || busy) return;
+    busy = true;
+    addBubble('user', text);
+    input.value = '';
+    const bubble = addBubble('ai', '…');
+    try {
+      let answer;
+      if (window.D4AI && window.D4AI.ask) {
+        answer = await new Promise((resolve, reject) => {
+          window._d4aiAskCb = (ok, msg) => ok ? resolve(msg) : reject(new Error(msg));
+          window.D4AI.ask(text);
+        });
+      } else {
+        answer = 'D4AI bridge not ready.';
+      }
+      bubble.textContent = answer;
+      if (autoTalk && window.D4AI && window.D4AI.speak) {
+        window.D4AI.speak(answer);
+      }
+    } catch (e) {
+      bubble.textContent = e.message || 'Something went wrong.';
+    }
+    busy = false;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  document.getElementById('btnSend').onclick = () => sendText(input.value);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendText(input.value); });
+
+  document.getElementById('btnAuto').onclick = function () {
+    autoTalk = !autoTalk;
+    this.textContent = autoTalk ? 'Auto-talk On' : 'Auto-talk';
+  };
+
+  btnMic.onclick = () => {
+    if (window.D4AI && window.D4AI.listen) {
+      statusLine.style.display = 'block';
+      statusLine.textContent = 'D4AI listening…';
+      btnMic.classList.add('listening');
+      window.D4AI.listen();
+    }
+  };
+
+  // Called from Android
+  window.onD4AIHeard = (text) => {
+    btnMic.classList.remove('listening');
+    statusLine.style.display = 'none';
+    if (text) sendText(text);
+  };
+  window.onD4AIStatus = (msg) => {
+    statusLine.style.display = msg ? 'block' : 'none';
+    statusLine.textContent = msg || '';
+    if (msg && msg.toLowerCase().includes('listening')) btnMic.classList.add('listening');
+    else btnMic.classList.remove('listening');
+  };
+
+  const drawer = document.getElementById('drawer');
+  document.getElementById('btnMenu').onclick = () => drawer.classList.add('open');
+  document.getElementById('btnClose').onclick = () => drawer.classList.remove('open');
+  drawer.onclick = (e) => { if (e.target === drawer) drawer.classList.remove('open'); };
+  document.getElementById('btnNew').onclick = () => {
+    chatEl.innerHTML = '';
+    chatEl.style.display = 'none';
+    welcome.style.display = 'flex';
+    drawer.classList.remove('open');
+  };
+  document.querySelectorAll('#drawer .item').forEach(el => {
+    el.onclick = () => {
+      const act = el.getAttribute('data-act');
+      drawer.classList.remove('open');
+      if (act === 'clear') document.getElementById('btnNew').onclick();
+      if (act === 'wake' && window.D4AI) window.D4AI.wake();
+      if (act === 'sleep' && window.D4AI) window.D4AI.sleep();
+      if (act === 'assist' && window.D4AI) window.D4AI.openAssistSettings();
+      if (act === 'about') addBubble('ai', 'I\'m D4AI by D4TECH — Creating Solutions, Innovating Lives. Creator: Amurun Destiny O.');
+      if (act === 'voice') {
+        statusLine.style.display = 'block';
+        statusLine.textContent = 'D4AI listening…';
+        if (window.D4AI) window.D4AI.listen();
+      }
+    };
+  });
+</script>
+</body>
+</html>

@@ -3,6 +3,8 @@ package com.d4tech.d4ai.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -21,28 +23,38 @@ class SpeechEngine(
     private var ttsReady = false
     private var recognizer: SpeechRecognizer? = null
     private var wantListen = false
+    private val main = Handler(Looper.getMainLooper())
 
     fun init(onReady: () -> Unit = {}) {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            tts?.language = Locale.US
+            tts?.language = Locale.getDefault()
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
-                    onSpeakDone()
-                    if (wantListen) startListening()
+                    main.post {
+                        onSpeakDone()
+                        if (wantListen) {
+                            // small gap so TTS audio doesn't echo into STT
+                            main.postDelayed({ startListening() }, 400)
+                        }
+                    }
                 }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    onSpeakDone()
-                    if (wantListen) startListening()
+                    main.post {
+                        onSpeakDone()
+                        if (wantListen) main.postDelayed({ startListening() }, 400)
+                    }
                 }
             })
             onReady()
         }
         if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(listener)
+            main.post {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    setRecognitionListener(listener)
+                }
             }
         }
     }
@@ -51,25 +63,50 @@ class SpeechEngine(
         wantListen = listenAfter
         stopListening()
         val engine = tts ?: return
-        if (!ttsReady) return
+        if (!ttsReady) {
+            if (listenAfter) startListening()
+            return
+        }
         val id = UUID.randomUUID().toString()
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
     fun startListening() {
         wantListen = true
-        val r = recognizer ?: return
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-        }
-        try {
-            r.startListening(intent)
-            onListening(true)
-        } catch (_: Exception) {
-            onListening(false)
+        main.post {
+            val r = recognizer
+            if (r == null) {
+                if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                    recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                        setRecognitionListener(listener)
+                    }
+                } else {
+                    onListening(false)
+                    return@post
+                }
+            }
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+            }
+            try {
+                recognizer?.startListening(intent)
+                onListening(true)
+            } catch (_: Exception) {
+                onListening(false)
+                // retry once
+                main.postDelayed({
+                    try {
+                        recognizer?.startListening(intent)
+                        onListening(true)
+                    } catch (_: Exception) {
+                        onListening(false)
+                    }
+                }, 500)
+            }
         }
     }
 
@@ -96,20 +133,24 @@ class SpeechEngine(
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() = onListening(false)
+        override fun onEndOfSpeech() {}
         override fun onError(error: Int) {
             onListening(false)
-            // restart if still awake
-            if (wantListen && error != SpeechRecognizer.ERROR_CLIENT) {
-                startListening()
+            // 7 = NO_MATCH, 6 = SPEECH_TIMEOUT, 5 = CLIENT — retry if still awake
+            if (wantListen && error != SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                main.postDelayed({ if (wantListen) startListening() }, 600)
             }
         }
         override fun onResults(results: Bundle?) {
             onListening(false)
             val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = list?.firstOrNull()?.trim().orEmpty()
-            if (text.isNotEmpty()) onHeard(text)
-            else if (wantListen) startListening()
+            if (text.isNotEmpty()) {
+                wantListen = false
+                onHeard(text)
+            } else if (wantListen) {
+                main.postDelayed({ startListening() }, 400)
+            }
         }
         override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
