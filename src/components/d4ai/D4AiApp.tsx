@@ -46,6 +46,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { askD4AI } from "@/lib/pollinations";
 import { appNavigate } from "@/lib/app-navigate";
 import { useSessionUser } from "@/lib/session";
 import {
@@ -77,7 +78,7 @@ type Conversation = {
 
 const STORE_KEY = "d4ai_conversations_v1";
 const ACTIVE_KEY = "d4ai_active_id_v1";
-// Backend is only reached via same-origin /api/d4ai/chat (Vercel → Flask). Never call :11434 or :5000 from the browser.
+// Brain: Pollinations AI as D4AI (works in local Capacitor app).
 const THEME_KEY = "d4ai_theme_v1";
 const SPEAK_KEY = "d4ai_autospeak_v1";
 const LOGO = "/d4ai-avatar.png";
@@ -1467,47 +1468,22 @@ function D4AiPage() {
         } else {
           const ac = new AbortController();
           const to = window.setTimeout(() => ac.abort(), 90000);
-          let chatRes: Response;
           try {
-            chatRes = await fetch("/api/d4ai/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-              body: JSON.stringify({
-                message: userText,
-                messages: history.slice(-4).map((m) => ({
-                  role: m.role,
-                  content: String(m.content || "").slice(0, 500),
-                })),
-              }),
-              cache: "no-store",
-              signal: ac.signal,
-            });
+            full = await askD4AI(
+              userText,
+              history.slice(-6).map((m) => ({
+                role: m.role,
+                content: String(m.content || ""),
+              })),
+              ac.signal,
+            );
+            full = String(full)
+              .replace(/\n*Thought for [\d.]+s\s*$/i, "")
+              .replace(/\b(My name is CR|I am CR|I'?m CR)[^.!?]*[.!?]?/gi, "I'm D4AI.")
+              .replace(/\bChatbot Response\b/gi, "D4AI")
+              .trim();
           } finally {
             window.clearTimeout(to);
-          }
-
-          let payload: { ok?: boolean; answer?: string; error?: string; sources?: string[] } = {};
-          try {
-            payload = (await chatRes.json()) as typeof payload;
-          } catch {
-            throw new Error("Invalid response from D4AI server");
-          }
-
-          if (!chatRes.ok || payload.ok === false || !String(payload.answer || "").trim()) {
-            throw new Error(payload.error || `HTTP ${chatRes.status}`);
-          }
-
-          full = String(payload.answer)
-            .replace(/\n*Thought for [\d.]+s\s*$/i, "")
-            .replace(/\n*---\s*\n*[\d.]+s.*$/i, "")
-            .replace(/\n*⚡\s*[\d.]+s.*$/i, "")
-            .replace(/\b(My name is CR|I am CR|I'?m CR)[^.!?]*[.!?]?/gi, "I'm D4AI.")
-            .replace(/\bChatbot Response\b/gi, "D4AI")
-            .replace(/\bCharacter Recognition\b/gi, "D4AI")
-            .trim();
-          if (payload.sources?.length) {
-            const extra = payload.sources.filter((s) => !full.includes(s));
-            if (extra.length) full += "\n\n" + extra.map((s) => `🔗 ${s}`).join("\n");
           }
         }
 

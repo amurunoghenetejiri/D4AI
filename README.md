@@ -1,24 +1,31 @@
-# Project Migration Hub
+# D4AI
 
-/skill:migrate-external-project Source: code archive. Migrate the attached project into Lovable.
+**Personal local Android AI assistant by D4TECH**  
+*Creating Solutions, Innovating Lives* — Amurun Destiny O.
 
-This project was built with [Lovable](https://lovable.dev).
+## Clone in Code Assist
 
-## Build with Lovable
+```text
+https://github.com/amurunoghenetejiri/D4AI.git
+```
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/58c82f88-3710-4b82-94e0-71424cc11498).
+## Features
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+- Full D4AI UI (logo, dark theme, splash, chat)
+- **Brain:** Pollinations AI (branded **D4AI**)
+- **Wake:** Assist / long-press Home / earpod long-press
+- **On wake:** “D4AI listening”
+- **Sleep:** say “sleep”
+- **Commands:** open apps, call (confirm), volume, mute, brightness, flashlight
+- **Questions:** answered as D4AI
 
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+## Run on phone
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
 npm i
-npm run dev
+npm run build
+npx cap sync android
 ```
+
+Open `android/` in Android Studio / Code Assist → Run.  
+Grant mic. Set **D4AI** as default digital assistant for Home long-press.
