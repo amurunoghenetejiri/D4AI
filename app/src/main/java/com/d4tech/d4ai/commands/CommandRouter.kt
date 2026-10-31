@@ -1,5 +1,6 @@
 package com.d4tech.d4ai.commands
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -218,13 +219,13 @@ class CommandRouter(private val context: Context) {
         // --- flashlight ---
         when {
             containsAny(lower, "flashlight on", "torch on", "turn on flashlight", "turn on the flashlight", "light on") -> {
-                setTorch(true); return RouteResult.Spoke("Flashlight on.")
+                return RouteResult.Spoke(setTorch(true))
             }
             containsAny(lower, "flashlight off", "torch off", "turn off flashlight", "turn off the flashlight", "light off") -> {
-                setTorch(false); return RouteResult.Spoke("Flashlight off.")
+                return RouteResult.Spoke(setTorch(false))
             }
             lower == "flashlight" || lower == "torch" -> {
-                setTorch(!torchOn); return RouteResult.Spoke(if (torchOn) "Flashlight on." else "Flashlight off.")
+                return RouteResult.Spoke(setTorch(!torchOn))
             }
         }
 
@@ -720,16 +721,22 @@ class CommandRouter(private val context: Context) {
         }
     }
 
-    private fun setTorch(on: Boolean) {
-        try {
+    private fun setTorch(on: Boolean): String {
+        if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            return "D4AI needs Camera permission to control the flashlight. Grant it in Android app settings, then try again."
+        }
+        return try {
             val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val id = cm.cameraIdList.firstOrNull() ?: return
+            val id = cm.cameraIdList.firstOrNull {
+                cm.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return "This phone does not report an available camera flash."
             cm.setTorchMode(id, on)
             torchOn = on
-        } catch (_: Exception) {
+            if (on) "Flashlight turned on." else "Flashlight turned off."
+        } catch (e: Exception) {
+            "Android could not change the flashlight: " + (e.message ?: "permission or hardware unavailable")
         }
     }
-
     private fun setAlarm(hour: Int, minute: Int, ampm: String): String {
         var h = hour
         if (ampm == "pm" && h < 12) h += 12
