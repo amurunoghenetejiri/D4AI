@@ -67,13 +67,19 @@ object PollinationsClient {
 
         Identity:
         - Always call yourself D4AI. Never say you are ChatGPT, Claude, Gemini, Grok, or Pollinations.
-        - You are a phone assistant: helpful, clear, friendly, and complete your thoughts.
+        - Be clear, friendly, and complete your thoughts.
+
+        Formatting rules (very important):
+        - Never use markdown symbols like ** or __ or *** or ### or ``` or ||| or --- tables with pipes.
+        - Never use LaTeX or raw math codes like \frac, \sqrt, \times, \pm, \cdot.
+        - For math use normal symbols: ² ³ √ × ÷ ± ≈ ≤ ≥ and fractions like 1/2 or (a+b)/c.
+        - Write clean plain sentences. Use short paragraphs. Emojis are OK sparingly.
+        - Prefer practical answers. Keep spoken answers reasonably concise unless asked for detail.
 
         Behavior:
         - Answer questions fully and usefully.
-        - Device commands (open apps, volume, calls, etc.) are handled by the phone OS; confirm briefly when relevant.
-        - If the user asks your name: "I'm D4AI, your personal Android assistant by D4TECH."
-        - Prefer practical answers. Use short paragraphs.
+        - Device commands are handled by the phone OS; confirm briefly when relevant.
+        - If asked your name: "I'm D4AI, your personal Android assistant by D4TECH."
         - Do not mention rate limits, API keys, or underlying model providers.
     """.trimIndent()
 
@@ -191,14 +197,48 @@ object PollinationsClient {
     }
 
     private fun sanitize(s: String): String {
-        // Never show provider billing text to the user as an "answer"
         if (isRateLimitText(s)) {
             return "Please try that again in a few seconds — the free lane was busy."
         }
-        return s.trim()
+        var t = s.trim()
             .replace(Regex("(?i)as an ai language model"), "As D4AI")
             .replace(Regex("(?i)i'm chatgpt"), "I'm D4AI")
             .replace(Regex("(?i)i am chatgpt"), "I am D4AI")
+            .replace(Regex("(?i)i'm an ai assistant"), "I'm D4AI")
+        // strip markdown noise
+        t = t.replace(Regex("\*\*\*+"), "")
+            .replace(Regex("\*\*"), "")
+            .replace(Regex("(?m)^#{1,6}\s*"), "")
+            .replace(Regex("```[a-zA-Z]*"), "")
+            .replace("```", "")
+            .replace(Regex("\|\|\|?"), "")
+            .replace(Regex("(?m)^\|.*\|$"), "")
+            .replace(Regex("__"), "")
+        // common latex → symbols
+        t = t.replace(Regex("\\\\frac\{([^}]+)\}\{([^}]+)\}"), "$1/$2")
+            .replace(Regex("\\frac\{([^}]+)\}\{([^}]+)\}"), "$1/$2")
+            .replace(Regex("\\\\sqrt\{([^}]+)\}"), "√($1)")
+            .replace(Regex("\\sqrt\{([^}]+)\}"), "√($1)")
+            .replace(Regex("\\sqrt"), "√")
+            .replace(Regex("\\times"), "×")
+            .replace(Regex("\\div"), "÷")
+            .replace(Regex("\\pm"), "±")
+            .replace(Regex("\\cdot"), "·")
+            .replace(Regex("\\leq"), "≤")
+            .replace(Regex("\\geq"), "≥")
+            .replace(Regex("\\neq"), "≠")
+            .replace(Regex("\\approx"), "≈")
+            .replace(Regex("\^2\b"), "²")
+            .replace(Regex("\^3\b"), "³")
+            .replace(Regex("\\left\("), "(")
+            .replace(Regex("\\right\)"), ")")
+            .replace(Regex("\\left\["), "[")
+            .replace(Regex("\\right\]"), "]")
+            .replace(Regex("\\"), "")
+        // collapse leftover pipe tables
+        t = t.replace(Regex("(?m)^\s*\|\s*"), "")
+            .replace(Regex("\s*\|\s*"), " · ")
+        return t.trim()
     }
 
     private sealed class Endpoint {

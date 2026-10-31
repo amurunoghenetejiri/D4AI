@@ -128,6 +128,17 @@ class MainActivity : AppCompatActivity() {
                             deliver(true, r.prompt)
                         }
                         RouteResult.NotCommand -> {
+                            val thinking = listOf(
+                                "One moment…",
+                                "Thinking…",
+                                "Let me check…",
+                                "Working on that…",
+                                "Hmm, give me a second…",
+                            ).random()
+                            runOnUiThread {
+                                speech.speak(thinking, listenAfter = false)
+                                deliver(true, thinking)
+                            }
                             val answer = PollinationsClient.ask(message)
                             speech.speak(answer, listenAfter = false)
                             deliver(true, answer)

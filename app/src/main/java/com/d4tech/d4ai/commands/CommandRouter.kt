@@ -13,6 +13,8 @@ import android.os.StatFs
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.provider.AlarmClock
+import android.provider.MediaStore
+import android.telecom.TelecomManager
 import kotlin.math.roundToInt
 
 sealed class RouteResult {
@@ -497,8 +499,10 @@ class CommandRouter(private val context: Context) {
     private fun simCount(): Int {
         return try {
             val tm = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+            @Suppress("DEPRECATION")
             val list = tm?.callCapablePhoneAccounts
-            list?.size ?: 1
+            val n = list?.size ?: 1
+            if (n < 1) 1 else n
         } catch (_: Exception) {
             1
         }
