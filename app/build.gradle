@@ -45,6 +45,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    // Free offline STT for wake word — no API key
-    implementation 'com.alphacephei:vosk-android:0.3.47'
+    // Bundled free offline Vosk (no Maven sync needed)
+    implementation(name: 'vosk-android-0.3.47', ext: 'aar')
+    implementation files('libs/vosk-classes.jar')
 }
