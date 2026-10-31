@@ -467,6 +467,79 @@ class CommandRouter(private val context: Context) {
     }
 
     /**
+     * Multi-step commands: "open WhatsApp then set a timer for 5 minutes",
+     * "call mom and set alarm for 6:30 am", "volume up and open chrome".
+     * Splits the utterance on connectors, runs each part, and joins the
+     * spoken replies. Returns null when the utterance is not clearly a
+     * chain of commands (caller then falls back to single-command routing).
+     */
+    fun handleMulti(raw: String): String? {
+        val t = raw.trim()
+        val all = t.lowercase()
+        // Never split notes, dictated messages or questions.
+        if (all.startsWith("remember") || all.startsWith("note to self") || all.startsWith("make a note")) return null
+        if (all.contains("?") || all.contains(" saying ") || all.contains(" that i ")) return null
+        val parts = t.split(Regex("\\s*(?:,|;|\\band\\s+then\\b|\\bthen\\b|\\bafter\\s+that\\b|\\bafterwards\\b|\\band\\s+next\\b|\\balso\\b|\\band\\b)\\s*", RegexOption.IGNORE_CASE))
+            .map { it.trim() }
+            .filter { it.length > 2 }
+        if (parts.size < 2) return null
+
+        val replies = ArrayList<String>()
+        for (p in parts) {
+            val pl = p.lowercase()
+            if (looksLikeQuestion(pl) || !isCommandLike(pl)) return null
+            when (val r = route(p)) {
+                is RouteResult.Spoke -> {
+                    if (r.message == "__SLEEP__") {
+                        return if (replies.isEmpty()) null else replies.joinToString(" ") + " Goodnight."
+                    }
+                    replies.add(r.message)
+                }
+                is RouteResult.NeedConfirm -> {
+                    replies.add(r.prompt)
+                    return replies.joinToString(" ")
+                }
+                RouteResult.NotCommand -> return null
+            }
+        }
+        return if (replies.isEmpty()) null else replies.joinToString(" ")
+    }
+
+    private fun looksLikeQuestion(lower: String): Boolean {
+        if (lower.endsWith("?")) return true
+        return Regex("^(what|who|why|how|when|where|which|is |are |can |do |does |could |would |will |should |tell me about)\\b")
+            .containsMatchIn(lower)
+    }
+
+    private fun isCommandLike(lower: String): Boolean {
+        val hints = listOf(
+            "open ", "launch ", "start ", "run ", "close ", "exit ", "quit ",
+            "call ", "dial ", "text ", "sms ", "message", "whatsapp", "email", "mail ",
+            "set alarm", "set timer", "alarm", "timer", "play ", "search", "google ",
+            "look up", "youtube", "navigate", "directions", "volume", "brightness",
+            "flashlight", "torch", "mute", "battery", "wifi", "wi-fi", "wi fi",
+            "bluetooth", "airplane", "screenshot", "record", "share ", "take photo",
+            "take picture", "camera", "uninstall", "install", "block ", "notification",
+            "go home", "home screen", "my notes", "read my notes", "last command",
+            "command history", "settings", "dark mode", "battery saver", "split",
+        )
+        if (hints.any { lower.contains(it) }) return true
+        return bareAppOpen(lower) != null
+    }
+
+    /** Opens the screen where D4AI is chosen as the phone's default assistant. */
+    private fun openDefaultAssistantSettings(): String {
+        return try {
+            context.startActivity(
+                Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "Opening the default assistant screen. Pick D4AI, then long-press Home to wake me."
+        } catch (e: Exception) {
+            "Couldn't open assistant settings: ${e.message}"
+        }
+    }
+
+    /**
      * Executes a command plan produced by the AI classifier so free-form
      * phrasings still run as device commands.
      */
