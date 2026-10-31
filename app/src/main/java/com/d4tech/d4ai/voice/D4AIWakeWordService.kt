@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.d4tech.d4ai.MainActivity
@@ -21,13 +22,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 /**
- * Background wake service.
- * IDLE: listens in cycles for wake phrase.
- * ACTIVE: listens for one command after wake.
- * PAUSED: TTS/music playing — mic off so we don't hear ourselves.
+ * HOW WAKE WORKS ON ANDROID:
+ * - True always-on "Hey Google" style needs on-device wake-word (Porcupine) OR the app
+ *   briefly opening the mic (green indicator may flash).
+ * - Many phones block Google STT when the screen is off / app is cached.
+ * - RELIABLE path: tap the notification "Talk" button OR say the wake word while
+ *   the screen is on and the notification is showing.
+ * - Green mic dot: appears while Android grants mic to this service during a listen window.
  */
 class D4AIWakeWordService : Service() {
 
@@ -37,56 +40,40 @@ class D4AIWakeWordService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var speech: SpeechEngine
     private lateinit var router: CommandRouter
-    private lateinit var voicePrint: VoicePrintManager
     private var state = State.IDLE
-    private var cycleRunning = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
-    private val wakeGreetings = listOf(
-        "Yes, I'm here. What do you need?",
-        "Hey! What's up?",
-        "I'm listening, go ahead.",
-        "Yo, what's good?",
-        "Right here. How can I help?",
-        "Yes boss, tell me.",
-        "I'm with you. What should we do?",
-        "Hey, I heard you. What's the plan?",
-    )
-
-    private val commandAcks = listOf(
-        "On it.",
-        "Got you.",
-        "Sure thing.",
-        "Alright.",
-        "Okay, let's do that.",
+    private val greetings = listOf(
+        "Yes, I'm here. What do you want me to do?",
+        "Hey! I'm listening — go ahead.",
+        "I'm right here. What's up?",
+        "Yo, tell me what you need.",
+        "Yes boss, I'm listening.",
+        "I heard you. How can I help?",
     )
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         isRunning = true
-        voicePrint = VoicePrintManager(this)
         router = CommandRouter(this)
         PollinationsClient.init(this)
         speech = SpeechEngine(
             context = this,
-            onHeard = { },
-            onListening = { },
+            onHeard = {},
+            onListening = {},
             onSpeakDone = {
                 main.postDelayed({
                     if (state == State.PAUSED || state == State.PROCESSING) {
-                        // after speaking, go back to idle wake listening
-                        if (state != State.ACTIVE) {
-                            state = State.IDLE
-                            updateNotif("D4AI is active • Say “D4AI” to wake")
-                            scheduleNextListen(600)
-                        }
+                        state = State.IDLE
+                        updateNotif("Active • Say D4AI or tap Talk")
+                        scheduleListen(700)
                     }
-                }, 400)
+                }, 500)
             },
         )
         speech.init { }
         ensureChannel()
-        // Stop legacy listen service so only one mic owner
         try {
             stopService(Intent(this, D4AiListenService::class.java))
         } catch (_: Exception) {
@@ -104,103 +91,111 @@ class D4AIWakeWordService : Service() {
                 return START_STICKY
             }
             ACTION_RESUME -> {
-                if (state == State.PAUSED) {
-                    state = State.IDLE
-                    scheduleNextListen(500)
-                }
+                state = State.IDLE
+                scheduleListen(400)
+                return START_STICKY
+            }
+            ACTION_TALK, ACTION_WAKE_NOW -> {
+                // Guaranteed path: user tapped notification
+                forceConversation()
                 return START_STICKY
             }
             else -> {
                 isRunning = true
-                startForeground(NOTIF_ID, buildNotif("D4AI is active • Say “D4AI” to wake"))
+                startForeground(NOTIF_ID, buildNotif("Active • Say D4AI or tap Talk"))
+                acquireWakeLock()
                 state = State.IDLE
-                scheduleNextListen(300)
+                scheduleListen(400)
             }
         }
         return START_STICKY
     }
 
-    /** Continuous listen cycles for wake phrase. */
-    private fun scheduleNextListen(delayMs: Long) {
-        main.removeCallbacks(listenCycle)
-        if (!isRunning) return
-        main.postDelayed(listenCycle, delayMs)
+    /** User tapped notification — always starts a real conversation. */
+    private fun forceConversation() {
+        main.removeCallbacks(listenRunnable)
+        acquireWakeLock()
+        state = State.ACTIVE
+        beep()
+        val g = greetings.random()
+        updateNotif("Listening…")
+        enterPaused()
+        speech.speak(g, listenAfter = false)
+        main.postDelayed({
+            if (!isRunning) return@postDelayed
+            state = State.ACTIVE
+            startCommandListen()
+        }, 1700)
     }
 
-    private val listenCycle = object : Runnable {
-        override fun run() {
-            if (!isRunning) return
-            if (state != State.IDLE) {
-                scheduleNextListen(1500)
-                return
+    private fun scheduleListen(delay: Long) {
+        main.removeCallbacks(listenRunnable)
+        if (!isRunning) return
+        main.postDelayed(listenRunnable, delay)
+    }
+
+    private val listenRunnable = Runnable {
+        if (!isRunning || state != State.IDLE) {
+            scheduleListen(1500)
+            return@Runnable
+        }
+        if (isMusicPlaying()) {
+            scheduleListen(2000)
+            return@Runnable
+        }
+        acquireWakeLock()
+        updateNotif("Active • listening for D4AI…")
+        Log.d(TAG, "listen window")
+        speech.startListeningOnce(timeoutMs = 6000) { text ->
+            Log.d(TAG, "heard=[$text] state=$state")
+            if (!isRunning || state != State.IDLE) {
+                scheduleListen(1000)
+                return@startListeningOnce
             }
-            if (isMusicPlaying()) {
-                scheduleNextListen(2000)
-                return
+            if (text.isBlank()) {
+                scheduleListen(500)
+                return@startListeningOnce
             }
-            cycleRunning = true
-            updateNotif("D4AI is active • listening for wake word…")
-            Log.d(TAG, "Wake listen window start")
-            speech.startListeningOnce(timeoutMs = 5000) { text ->
-                cycleRunning = false
-                Log.d(TAG, "Wake heard: [$text] state=$state")
-                if (!isRunning || state != State.IDLE) {
-                    scheduleNextListen(1200)
-                    return@startListeningOnce
-                }
-                if (text.isBlank()) {
-                    scheduleNextListen(800)
-                    return@startListeningOnce
-                }
-                if (isWakePhrase(text)) {
-                    onWakeDetected()
-                } else {
-                    // not wake — keep cycling
-                    scheduleNextListen(600)
-                }
+            if (isWakePhrase(text)) {
+                onWake(text)
+            } else {
+                scheduleListen(400)
             }
         }
     }
 
-    private fun onWakeDetected() {
-        main.removeCallbacks(listenCycle)
-        state = State.ACTIVE
-        beep()
-        val greet = wakeGreetings.random()
-        updateNotif("D4AI listening — speak your command")
-        enterPaused() // don't listen while speaking greeting
-        speech.speak(greet, listenAfter = false)
-        // After greeting, open command window
-        main.postDelayed({
-            if (!isRunning) return@postDelayed
-            state = State.ACTIVE
-            updateNotif("D4AI listening — speak now")
-            speech.startListeningOnce(timeoutMs = 10000) { cmd ->
-                Log.d(TAG, "Command: [$cmd]")
-                if (cmd.isBlank()) {
-                    speech.speak("I didn't catch that. Say D4AI when you need me again.", listenAfter = false)
-                    state = State.IDLE
-                    updateNotif("D4AI is active • Say “D4AI” to wake")
-                    scheduleNextListen(1500)
-                    return@startListeningOnce
-                }
-                // stop / sleep while active
-                val low = cmd.lowercase()
-                if (low == "stop" || low == "stop listening") {
-                    speech.speak("Okay, I'll stay quiet. Say D4AI when you need me.", listenAfter = false)
-                    state = State.IDLE
-                    updateNotif("D4AI is active • Say “D4AI” to wake")
-                    scheduleNextListen(1200)
-                    return@startListeningOnce
-                }
-                if (low == "sleep" || low.contains("go to sleep")) {
-                    speech.speak("Cool, going to sleep. Activate me again from the app when you want.", listenAfter = false)
-                    main.postDelayed({ stopSelfSafe() }, 1500)
-                    return@startListeningOnce
-                }
-                handleCommand(cmd)
+    private fun onWake(heard: String) {
+        Log.d(TAG, "WAKE: $heard")
+        main.removeCallbacks(listenRunnable)
+        forceConversation()
+    }
+
+    private fun startCommandListen() {
+        updateNotif("Listening — speak your command")
+        speech.startListeningOnce(timeoutMs = 12000) { cmd ->
+            Log.d(TAG, "cmd=[$cmd]")
+            if (cmd.isBlank()) {
+                speech.speak("I didn't catch that. Say D4AI or tap Talk on the notification.", listenAfter = false)
+                state = State.IDLE
+                updateNotif("Active • Say D4AI or tap Talk")
+                scheduleListen(1500)
+                return@startListeningOnce
             }
-        }, 1600)
+            val low = cmd.lowercase()
+            if (low == "stop" || low == "stop listening") {
+                speech.speak("Okay, I'll wait. Say D4AI when you need me.", listenAfter = false)
+                state = State.IDLE
+                updateNotif("Active • Say D4AI or tap Talk")
+                scheduleListen(1200)
+                return@startListeningOnce
+            }
+            if (low == "sleep" || low.contains("go to sleep")) {
+                speech.speak("Alright, sleeping. Open the app or notification when you want me back.", listenAfter = false)
+                main.postDelayed({ stopSelfSafe() }, 1600)
+                return@startListeningOnce
+            }
+            handleCommand(cmd)
+        }
     }
 
     private fun handleCommand(text: String) {
@@ -211,80 +206,66 @@ class D4AIWakeWordService : Service() {
                 when (val r = router.handle(text)) {
                     is RouteResult.Spoke -> {
                         if (r.message == "__SLEEP__") {
-                            speech.speak("Alright, sleeping. Ping me later.", listenAfter = false)
+                            speech.speak("Sleeping. Catch you later.", listenAfter = false)
                             main.postDelayed({ stopSelfSafe() }, 1200)
                             return@launch
                         }
-                        val msg = humanize(r.message)
-                        speech.speak(msg, listenAfter = false)
+                        speech.speak(humanize(r.message), listenAfter = false)
                     }
                     is RouteResult.NeedConfirm -> {
                         speech.speak(humanize(r.prompt), listenAfter = false)
                         main.postDelayed({
                             state = State.ACTIVE
-                            speech.startListeningOnce(timeoutMs = 12000) { ans ->
+                            speech.startListeningOnce(12000) { ans ->
                                 if (ans.isBlank()) {
                                     state = State.IDLE
-                                    scheduleNextListen(1000)
-                                } else {
-                                    handleCommand(ans)
-                                }
+                                    scheduleListen(1000)
+                                } else handleCommand(ans)
                             }
-                        }, 1400)
+                        }, 1500)
                         return@launch
                     }
                     RouteResult.NotCommand -> {
                         val a = try {
                             PollinationsClient.ask(text)
                         } catch (_: Exception) {
-                            "Hmm, I couldn't reach the network just now. Try again in a bit."
+                            "Network's being slow. Try again in a second."
                         }
                         speech.speak(a, listenAfter = false)
                     }
                 }
-            } catch (e: Exception) {
-                speech.speak("Something went wrong on my side. Try again.", listenAfter = false)
+            } catch (_: Exception) {
+                speech.speak("Something went wrong. Try once more.", listenAfter = false)
             }
             state = State.IDLE
-            updateNotif("D4AI is active • Say “D4AI” to wake")
-            // resume after TTS via onSpeakDone + schedule
-            main.postDelayed({ scheduleNextListen(1800) }, 2000)
+            updateNotif("Active • Say D4AI or tap Talk")
+            main.postDelayed({ scheduleListen(2000) }, 2200)
         }
     }
 
     private fun humanize(msg: String): String {
-        // Light touch so command replies don't feel like a robot
         if (msg.startsWith("Opening ")) {
-            val app = msg.removePrefix("Opening ").removeSuffix(".")
+            val app = msg.removePrefix("Opening ").trimEnd('.')
             return listOf(
                 "Okay, opening $app right now.",
                 "Sure, taking you to $app.",
                 "Got it — opening $app.",
-                "On it, opening $app for you.",
             ).random()
         }
-        if (msg == "Flashlight on.") return listOf("Flashlight is on.", "Light's on for you.").random()
-        if (msg == "Flashlight off.") return listOf("Flashlight off.", "Light's off.").random()
-        if (msg.startsWith("Home screen")) return "Alright, home screen."
         return msg
     }
 
     private fun enterPaused() {
         state = State.PAUSED
         speech.stopListening()
-        main.removeCallbacks(listenCycle)
+        main.removeCallbacks(listenRunnable)
     }
 
     fun pauseWakeWord() = enterPaused()
-
     fun resumeWakeWord() {
         if (!isRunning) return
-        if (isMusicPlaying()) {
-            main.postDelayed({ resumeWakeWord() }, 1000)
-            return
-        }
         state = State.IDLE
-        scheduleNextListen(700)
+        scheduleListen(600)
     }
 
     private fun isWakePhrase(text: String): Boolean {
@@ -292,18 +273,17 @@ class D4AIWakeWordService : Service() {
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-        // STT often mishears D4AI
-        val hits = listOf(
-            "d4ai", "d4a", "d 4 ai", "d 4 a", "the 4 ai", "the four ai",
-            "default ai", "default a i", "before ai", "diff or ai",
-            "hey d4ai", "hey default ai", "wake d4ai", "okay d4ai",
+        val keys = listOf(
+            "d4ai", "d4a", "d 4 ai", "d 4 a",
+            "default ai", "default a i", "defaultay",
+            "before ai", "before a i", "befor ai", "the before ai",
+            "hey d4ai", "hey default ai", "wake d4ai",
+            "the four ai", "def or ai", "d for ai", "d4 ai",
         )
-        if (hits.any { t == it || t.startsWith("$it ") || t.endsWith(" $it") || t.contains(" $it ") }) {
-            return true
-        }
-        // fuzzy: contains both d and ai-ish
-        if (t.contains("d4") && t.contains("ai")) return true
+        if (keys.any { t == it || t.contains(it) }) return true
+        if (t.contains("before") && t.contains("ai")) return true
         if (t.contains("default") && t.contains("ai")) return true
+        if (t.contains("d4") && t.contains("ai")) return true
         return false
     }
 
@@ -317,27 +297,47 @@ class D4AIWakeWordService : Service() {
 
     private fun beep() {
         try {
-            ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
-                .startTone(ToneGenerator.TONE_PROP_ACK, 180)
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, 95)
+                .startTone(ToneGenerator.TONE_PROP_ACK, 200)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(PowerManager::class.java)
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "d4ai:wake")
+                wakeLock?.setReferenceCounted(false)
+            }
+            if (wakeLock?.isHeld != true) {
+                wakeLock?.acquire(10 * 60 * 1000L)
+            }
         } catch (_: Exception) {
         }
     }
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(android.app.NotificationManager::class.java)
-            nm?.createNotificationChannel(
-                android.app.NotificationChannel(
-                    CHANNEL, "D4AI Background",
-                    android.app.NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
+            getSystemService(android.app.NotificationManager::class.java)
+                ?.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        CHANNEL, "D4AI Background",
+                        android.app.NotificationManager.IMPORTANCE_LOW,
+                    ),
+                )
         }
     }
 
     private fun buildNotif(text: String): Notification {
-        val open = PendingIntent.getActivity(
+        val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        // Tapping the notification body starts conversation immediately
+        val talk = PendingIntent.getService(
+            this, 2,
+            Intent(this, D4AIWakeWordService::class.java).setAction(ACTION_TALK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
@@ -349,7 +349,8 @@ class D4AIWakeWordService : Service() {
             .setContentTitle("D4AI")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(open)
+            .setContentIntent(talk) // tap notif = talk, not only open app
+            .addAction(0, "Talk", talk)
             .addAction(0, "Stop", stop)
             .setOngoing(true)
             .setSilent(true)
@@ -366,9 +367,16 @@ class D4AIWakeWordService : Service() {
 
     private fun stopSelfSafe() {
         isRunning = false
-        main.removeCallbacks(listenCycle)
-        try { speech.stopListening() } catch (_: Exception) {}
-        try { speech.shutdown() } catch (_: Exception) {}
+        main.removeCallbacks(listenRunnable)
+        try {
+            speech.stopListening()
+            speech.shutdown()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         instance = null
@@ -376,7 +384,7 @@ class D4AIWakeWordService : Service() {
 
     override fun onDestroy() {
         isRunning = false
-        main.removeCallbacks(listenCycle)
+        main.removeCallbacks(listenRunnable)
         instance = null
         super.onDestroy()
     }
@@ -391,6 +399,8 @@ class D4AIWakeWordService : Service() {
         const val ACTION_PAUSE = "com.d4tech.d4ai.WAKE_PAUSE"
         const val ACTION_RESUME = "com.d4tech.d4ai.WAKE_RESUME"
         const val ACTION_START = "com.d4tech.d4ai.WAKE_START"
+        const val ACTION_TALK = "com.d4tech.d4ai.WAKE_TALK"
+        const val ACTION_WAKE_NOW = "com.d4tech.d4ai.WAKE_NOW"
 
         @Volatile var isRunning = false
         @Volatile var instance: D4AIWakeWordService? = null
