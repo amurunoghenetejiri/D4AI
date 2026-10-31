@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="d4ai_bg">#050b18</color>
+    <color name="d4ai_panel">#0b1a3a</color>
+    <color name="d4ai_accent">#3b82f6</color>
+    <color name="ic_launcher_background">#0b1a3a</color>
+</resources>

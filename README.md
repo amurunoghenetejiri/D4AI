@@ -3,6 +3,15 @@
 **Personal local Android AI assistant by D4TECH**  
 *Creating Solutions, Innovating Lives* — Amurun Destiny O.
 
+## Code Assist (important)
+
+Open the **`android`** folder only — not the repo root.
+
+Repo root = web files → “No build system recognized”.  
+`D4AI/android` = real Android app → Gradle modules appear.
+
+See **CODE_ASSIST.md**.
+
 ## Clone in Code Assist
 
 ```text
