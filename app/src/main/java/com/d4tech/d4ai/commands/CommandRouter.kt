@@ -971,15 +971,15 @@ class CommandRouter(private val context: Context) {
         val al = appName.lowercase()
         val follow = when {
             al.contains("calculator") || al.contains("calc") ->
-                "Opening calculator. What would you like me to calculate?"
+                "Okay, calculator is open. What should we calculate?"
             al.contains("chrome") || al.contains("browser") ->
-                "Opening $appName. Want a new search, or should I do something else?"
+                "Chrome is opening now. Want me to search for something?"
             al.contains("whatsapp") ->
-                "Opening WhatsApp. Do you want me to send a message to someone?"
+                "Opening WhatsApp for you. Want to message someone?"
             al.contains("camera") ->
-                "Opening camera. Do you want me to help take a photo?"
+                "Camera's ready. Want help taking a photo?"
             else ->
-                "Opening $appName. Do you want me to do anything in there?"
+                "Opening $appName right now. Want me to do anything in there?"
         }
         // Actually perform open via result message already opened inside openApp
         pending = PendingAction("post_open", appName)

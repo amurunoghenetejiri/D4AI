@@ -17,16 +17,24 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="Say “D4AI” clearly three times. This helps D4AI prefer your voice when waking."
+        android:text="Say “D4AI” three times. I’ll confirm each time and show your progress."
         android:textColor="#94A3B8"
         android:textSize="14sp" />
+    <ProgressBar
+        android:id="@+id/progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:max="3"
+        android:progress="0" />
     <TextView
         android:id="@+id/status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="16dp"
         android:gravity="center"
-        android:text="Tap Start — sample 1 of 3"
+        android:text="Sample 1 of 3"
         android:textColor="#22d3ee"
         android:textSize="16sp" />
     <Button
@@ -34,7 +42,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:text="Start enrollment" />
+        android:text="Start / Next sample" />
     <Button
         android:id="@+id/btnDone"
         android:layout_width="match_parent"
