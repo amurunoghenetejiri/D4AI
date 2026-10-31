@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">D4AI</string>
+    <string name="title_activity_main">D4AI</string>
+    <string name="package_name">com.d4tech.d4ai</string>
+    <string name="custom_url_scheme">com.d4tech.d4ai</string>
+    <string name="listening_prompt">D4AI listening</string>
+    <string name="sleeping_prompt">D4AI sleeping</string>
+</resources>

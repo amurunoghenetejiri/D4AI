@@ -1,40 +1,33 @@
 # D4AI
 
-**Personal local Android AI assistant by D4TECH**  
+**Personal Android AI assistant by D4TECH**  
 *Creating Solutions, Innovating Lives* — Amurun Destiny O.
 
-## Code Assist (important)
+## Code Assist
 
-Open the **`android`** folder only — not the repo root.
-
-Repo root = web files → “No build system recognized”.  
-`D4AI/android` = real Android app → Gradle modules appear.
-
-See **CODE_ASSIST.md**.
-
-## Clone in Code Assist
+Clone:
 
 ```text
 https://github.com/amurunoghenetejiri/D4AI.git
 ```
 
+Open the project → it must show **Android · 1 module** → **Run**.
+
+See **CODE_ASSIST.md**.
+
 ## Features
 
-- Full D4AI UI (logo, dark theme, splash, chat)
-- **Brain:** Pollinations AI (branded **D4AI**)
-- **Wake:** Assist / long-press Home / earpod long-press
-- **On wake:** “D4AI listening”
-- **Sleep:** say “sleep”
-- **Commands:** open apps, call (confirm), volume, mute, brightness, flashlight
-- **Questions:** answered as D4AI
+- Pollinations AI brain (branded **D4AI**)
+- Wake: button / Assist / Home long-press / earpod long-press  
+- On wake: “D4AI listening”  
+- Sleep: say “sleep”  
+- Commands: open apps, call (confirm), volume, mute, brightness, flashlight  
 
-## Run on phone
+## Layout
 
-```sh
-npm i
-npm run build
-npx cap sync android
+```text
+app/           Android application module
+settings.gradle
+build.gradle
+web/           (optional web sources)
 ```
-
-Open `android/` in Android Studio / Code Assist → Run.  
-Grant mic. Set **D4AI** as default digital assistant for Home long-press.

@@ -1,16 +1,32 @@
-# Open D4AI in Code Assist (phone)
+# Code Assist — how to run D4AI
 
-The **repo root** is a web project — Code Assist will say *“No build system recognized”*.
+## Correct project
 
-## Do this
+D4AI is now a **real Android project at the repo root**.
 
-1. In Code Assist, **close** the current folder if needed.
-2. **Open the `android` folder only** (not the whole D4AI repo root).
-   - Path: `D4AI/android`
-3. Wait for Gradle sync.
-4. Tap **Run** (green play) → install on your phone.
-5. Allow **Microphone**.
-6. Tap **Wake D4AI** and speak.
-7. (Optional) **Set D4AI as assistant** for long-press Home.
+After you **pull / re-clone**, you should see:
 
-If sync fails, use **File → Sync project with Gradle files**.
+**D4AI · Android · 1 module**
+
+Not: *Files · 0 modules*
+
+## Steps
+
+1. In Code Assist **Projects** list, remove/close the old **D4AI (0 modules)** if it is still there.
+2. **Clone again** or **pull** from:
+   ```text
+   https://github.com/amurunoghenetejiri/D4AI.git
+   ```
+3. Open **D4AI** (the new one — must say **Android · 1 module**).
+4. Wait for **Gradle sync**.
+5. Tap **Run** (green play) → install on phone.
+6. Allow **Microphone** → tap **Wake D4AI**.
+
+## Do not open
+
+- Old “D4AI · 0 modules” (web-only snapshot)
+- Only the nested `android` folder is no longer required — root is the app
+
+## “D4AI assistant”
+
+If you still have **D4AI assistant (1 module)** from earlier, you can ignore it or delete it. Use the main **D4AI** repo after this update.
