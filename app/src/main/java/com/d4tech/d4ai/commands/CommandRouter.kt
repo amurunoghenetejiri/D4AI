@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.Settings
-import android.hardware.camera2.CameraManager
+import com.d4tech.d4ai.system.SystemControlManager
 import kotlin.math.roundToInt
 
 sealed class RouteResult {
@@ -26,6 +26,7 @@ data class PendingAction(
 class CommandRouter(private val context: Context) {
 
     private var pending: PendingAction? = null
+    private val system = SystemControlManager(context)
 
     fun handle(raw: String): RouteResult {
         val text = raw.trim()
@@ -51,11 +52,36 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke("__SLEEP__")
         }
 
-        // Open app
+        // Direct phone-state questions must use Android APIs, not the language model.
+        if (lower in listOf("battery", "my battery", "battery percentage", "battery percent", "how much battery")) {
+            return RouteResult.Spoke(system.batterySummary())
+        }
+        if (lower in listOf("time", "what time is it", "current time")) {
+            return RouteResult.Spoke(system.currentTime())
+        }
+        if (lower in listOf("date", "today's date", "what is the date", "what's the date")) {
+            return RouteResult.Spoke(system.currentDate())
+        }
+        if (lower in listOf("battery saver", "open battery saver", "battery settings")) {
+            return RouteResult.Spoke(system.openBatterySettings())
+        }
+
+        // Open an app by explicit phrase, or a known app name spoken by itself.
         val openMatch = Regex("^(open|launch|start)\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)
         if (openMatch != null) {
             val appName = openMatch.groupValues[2].trim()
             return RouteResult.Spoke(openApp(appName))
+        }
+        val appOnly = lower.removePrefix("my ").trim()
+        val knownStandaloneApps = setOf(
+            "whatsapp", "telegram", "chrome", "camera", "settings", "youtube",
+            "gmail", "maps", "phone", "jumia", "facebook", "instagram", "tiktok",
+            "spotify", "boomplay", "play store", "clock", "calculator", "gallery",
+            "photos", "files", "file manager", "contacts", "messages", "messenger",
+            "x", "twitter", "amazon", "konga", "jiji", "aliexpress",
+        )
+        if (appOnly in knownStandaloneApps) {
+            return RouteResult.Spoke(openApp(appOnly))
         }
 
         // Alarm: Android Clock presents the alarm for the user to review and save.
@@ -108,12 +134,12 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke(setBrightness(pct))
         }
 
-        // Flashlight
-        if (lower.contains("flashlight on") || lower.contains("torch on")) {
-            torch(true); return RouteResult.Spoke("Flashlight on.")
+        // Flashlight: report the actual CameraManager result.
+        if (lower in listOf("flashlight", "torch", "flashlight on", "torch on", "turn on flashlight", "turn flashlight on")) {
+            return RouteResult.Spoke(system.setFlashlight(true))
         }
-        if (lower.contains("flashlight off") || lower.contains("torch off")) {
-            torch(false); return RouteResult.Spoke("Flashlight off.")
+        if (lower in listOf("flashlight off", "torch off", "turn off flashlight", "turn flashlight off")) {
+            return RouteResult.Spoke(system.setFlashlight(false))
         }
 
         // Camera
@@ -122,11 +148,8 @@ class CommandRouter(private val context: Context) {
         }
 
         // Settings shortcuts
-        if (lower.contains("mobile data") && (lower.contains("settings") || lower.contains("open"))) {
-            context.startActivity(
-                Intent(Settings.ACTION_DATA_ROAMING_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            return RouteResult.Spoke("Opened mobile data settings.")
+        if (lower.contains("mobile data") && (lower.contains("settings") || lower.contains("open") || lower.contains("turn on") || lower.contains("turn off"))) {
+            return RouteResult.Spoke(system.openMobileDataSettings())
         }
 
         return RouteResult.NotCommand
@@ -266,12 +289,4 @@ class CommandRouter(private val context: Context) {
         }
     }
 
-    private fun torch(on: Boolean) {
-        try {
-            val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val id = cm.cameraIdList.firstOrNull() ?: return
-            cm.setTorchMode(id, on)
-        } catch (_: Exception) {
-        }
-    }
 }
