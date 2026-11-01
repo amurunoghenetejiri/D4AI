@@ -1,6 +1,7 @@
 package com.d4tech.d4ai.system
 
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
+import com.d4tech.d4ai.appcontrol.AppMemoryManager
 
 import android.app.NotificationManager
 import android.app.UiModeManager
@@ -620,6 +621,10 @@ class SystemControlManager(private val context: Context) {
             "global_notifications" -> globalAction("notifications")
             "global_lock" -> globalAction("lock_screen")
             "global_screenshot" -> globalAction("screenshot")
+            "remember" -> {
+                AppMemoryManager(context).rememberStatement(arg.lowercase(), arg2)
+                "Okay, I'll remember ${arg} is ${arg2}."
+            }
             "find_phone" -> findMyPhoneRing()
             "open_settings" -> openSettingsPage(arg.ifBlank { "settings" })
             "routine_morning" -> Routines(context).goodMorning()

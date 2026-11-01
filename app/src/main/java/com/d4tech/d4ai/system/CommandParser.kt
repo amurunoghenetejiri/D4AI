@@ -243,6 +243,11 @@ object CommandParser {
             return listOf(mapDevice(lower, text))
         }
 
+        // Remember statement "my girlfriend name is Blessing"
+        Regex("""(?:remember\s+that\s+|my\s+)(.+?)\s+is\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "remember", it.groupValues[1].trim(), it.groupValues[2].trim()))
+        }
+
         // Greetings stay chat
         if (Regex("""^(hi|hello|hey|good morning|good afternoon|good evening)\b""").containsMatchIn(lower)) {
             return listOf(ParsedIntent(IntentKind.CHAT, "greet"))

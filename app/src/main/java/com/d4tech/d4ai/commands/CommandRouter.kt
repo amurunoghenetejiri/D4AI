@@ -21,6 +21,8 @@ import com.d4tech.d4ai.memory.MemoryStore
 import com.d4tech.d4ai.system.CommandParser
 import com.d4tech.d4ai.system.IntentKind
 import com.d4tech.d4ai.system.SystemControlManager
+import com.d4tech.d4ai.appcontrol.AppControlManager
+import com.d4tech.d4ai.appcontrol.AppTaskPlanner
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
 import kotlin.math.roundToInt
 
@@ -42,6 +44,7 @@ class CommandRouter(private val context: Context) {
     private var pending: PendingAction? = null
     private var torchOn = false
     private val sysCtrl = SystemControlManager(context)
+    private val appCtrl = AppControlManager(context)
 
     /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
@@ -49,6 +52,16 @@ class CommandRouter(private val context: Context) {
             handleMulti(raw)?.let { joined ->
                 MemoryStore.logCommand(raw.trim().take(180))
                 return RouteResult.Spoke(joined)
+            }
+            // App task planner (multi-step human-like flows)
+            if (AppTaskPlanner.plan(raw).isNotEmpty()) {
+                return try {
+                    val spoken = appCtrl.executeNatural(raw)
+                    MemoryStore.logCommand(raw.trim().take(180))
+                    if (spoken.isNotBlank()) RouteResult.Spoke(spoken) else route(raw)
+                } catch (e: Exception) {
+                    RouteResult.Spoke("App control error: ${e.message}")
+                }
             }
         }
         val result = route(raw)
