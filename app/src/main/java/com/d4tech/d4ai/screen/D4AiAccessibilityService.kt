@@ -133,27 +133,60 @@ class D4AiAccessibilityService : AccessibilityService() {
             step(0)
         }
 
+        
         private fun findNode(node: AccessibilityNodeInfo, label: String, depth: Int): AccessibilityNodeInfo? {
-            if (depth > 25) return null
+            if (depth > 28) return null
+            val q = label.trim().lowercase()
+            val synonyms = synonymExpand(q)
             val texts = listOfNotNull(
                 node.text?.toString(),
                 node.contentDescription?.toString(),
-            ).map { it.trim() }
+                node.viewIdResourceName?.substringAfterLast('/'),
+                node.hintText?.toString(),
+            ).map { it.trim() }.filter { it.isNotEmpty() }
             for (t in texts) {
-                if (t.equals(label, ignoreCase = true) ||
-                    t.replace(" ", "") == label.replace(" ", "") ||
-                    (label.length >= 2 && t.startsWith(label, ignoreCase = true) && t.length <= label.length + 2)
-                ) {
+                val tl = t.lowercase()
+                if (synonyms.any { s ->
+                    tl == s ||
+                        tl.replace(" ", "") == s.replace(" ", "") ||
+                        tl.contains(s) ||
+                        s.contains(tl) && tl.length >= 3
+                }) {
                     return node
                 }
             }
+            // Prefer clickable matches deeper
             for (i in 0 until node.childCount) {
                 findNode(node.getChild(i), label, depth + 1)?.let { return it }
             }
             return null
         }
 
-        // ---------- gestures ----------
+        private fun synonymExpand(q: String): List<String> {
+            val base = mutableListOf(q)
+            val map = mapOf(
+                "mic" to listOf("mic", "microphone", "voice", "record", "speak", "audio", "voice input", "voice search"),
+                "microphone" to listOf("mic", "microphone", "voice", "record", "speak"),
+                "search" to listOf("search", "query", "find", "look up", "search bar"),
+                "send" to listOf("send", "submit", "paper plane", "reply"),
+                "back" to listOf("back", "navigate up", "close"),
+                "home" to listOf("home", "launcher"),
+                "menu" to listOf("menu", "more options", "more", "overflow"),
+                "camera" to listOf("camera", "photo", "take picture", "shutter"),
+                "gallery" to listOf("gallery", "photos", "images"),
+                "call" to listOf("call", "dial", "phone"),
+                "attach" to listOf("attach", "attachment", "paperclip", "clip"),
+                "emoji" to listOf("emoji", "sticker", "gif"),
+                "close" to listOf("close", "cancel", "dismiss", "x"),
+                "play" to listOf("play", "start", "resume"),
+                "pause" to listOf("pause", "stop"),
+                "settings" to listOf("settings", "preferences", "gear"),
+            )
+            for ((k, vs) in map) {
+                if (q == k || q.contains(k) || k.contains(q)) base.addAll(vs)
+            }
+            return base.distinct()
+        }
 
         fun swipe(direction: String): Boolean {
             val svc = instance ?: return false

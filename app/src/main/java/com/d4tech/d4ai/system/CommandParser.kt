@@ -177,7 +177,7 @@ object CommandParser {
             lower.contains("describe the screen") || lower.contains("look at my screen")) {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "read_screen"))
         }
-        Regex("""^(?:tap|press|click|touch)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+        Regex("""^(?:tap|press|click|touch|hit|hit the|press the|tap the|touch the)\s+(.+?)(?:\s+button)?$""", RegexOption.IGNORE_CASE).find(text)?.let {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "tap", it.groupValues[1].trim()))
         }
         if (lower.contains("swipe up") || lower.contains("scroll up")) {

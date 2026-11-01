@@ -89,7 +89,7 @@ class CommandRouter(private val context: Context) {
                     }
                 }
                 if (l.contains("generate") && (l.contains("image") || l.contains("picture") || l.contains("photo"))) {
-                    return s.replace(Regex("(?i)generate|an|a|image|picture|photo|of|please"), " ").replace(Regex("\s+"), " ").trim().ifBlank { s }
+                    return s.replace(Regex("(?i)generate|an|a|image|picture|photo|of|please"), " ").replace(Regex("""\s+"""), " ").trim().ifBlank { s }
                 }
                 return null
             }
@@ -109,7 +109,7 @@ class CommandRouter(private val context: Context) {
             }
             if (low.contains("generate") && low.contains("video") || low.contains("create") && low.contains("video") || low.contains("make") && low.contains("video")) {
                 val prompt = raw.replace(Regex("(?i)generate|create|make|a|an|video|of|please|for me"), " ")
-                    .replace(Regex("\s+"), " ").trim().ifBlank { "cinematic scene" }
+                    .replace(Regex("""\s+"""), " ").trim().ifBlank { "cinematic scene" }
                 return try {
                     val r = runBlocking { MediaGenerator.generateVideo(context, prompt, save = false) }
                     lastImagePath = r.filePath
