@@ -14,6 +14,7 @@ import { Route as ApiD4aiChatRouteImport } from './routes/api/d4ai/chat'
 import { Route as ApiD4aiLiveRouteImport } from './routes/api/d4ai/live'
 import { Route as ApiD4aiStreamRouteImport } from './routes/api/d4ai/stream'
 import { Route as ApiD4aiTtsRouteImport } from './routes/api/d4ai/tts'
+import { Route as ApiD4aiVideoRouteImport } from './routes/api/d4ai/video'
 import { Route as ApiD4aiVoiceRouteImport } from './routes/api/d4ai/voice'
 
 const IndexRoute = IndexRouteImport.update({
@@ -41,6 +42,11 @@ const ApiD4aiTtsRoute = ApiD4aiTtsRouteImport.update({
   path: '/api/d4ai/tts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiD4aiVideoRoute = ApiD4aiVideoRouteImport.update({
+  id: '/api/d4ai/video',
+  path: '/api/d4ai/video',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiD4aiVoiceRoute = ApiD4aiVoiceRouteImport.update({
   id: '/api/d4ai/voice',
   path: '/api/d4ai/voice',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/api/d4ai/live': typeof ApiD4aiLiveRoute
   '/api/d4ai/stream': typeof ApiD4aiStreamRoute
   '/api/d4ai/tts': typeof ApiD4aiTtsRoute
+  '/api/d4ai/video': typeof ApiD4aiVideoRoute
   '/api/d4ai/voice': typeof ApiD4aiVoiceRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/api/d4ai/live': typeof ApiD4aiLiveRoute
   '/api/d4ai/stream': typeof ApiD4aiStreamRoute
   '/api/d4ai/tts': typeof ApiD4aiTtsRoute
+  '/api/d4ai/video': typeof ApiD4aiVideoRoute
   '/api/d4ai/voice': typeof ApiD4aiVoiceRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/api/d4ai/live': typeof ApiD4aiLiveRoute
   '/api/d4ai/stream': typeof ApiD4aiStreamRoute
   '/api/d4ai/tts': typeof ApiD4aiTtsRoute
+  '/api/d4ai/video': typeof ApiD4aiVideoRoute
   '/api/d4ai/voice': typeof ApiD4aiVoiceRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/api/d4ai/live'
     | '/api/d4ai/stream'
     | '/api/d4ai/tts'
+    | '/api/d4ai/video'
     | '/api/d4ai/voice'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/api/d4ai/live'
     | '/api/d4ai/stream'
     | '/api/d4ai/tts'
+    | '/api/d4ai/video'
     | '/api/d4ai/voice'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/api/d4ai/live'
     | '/api/d4ai/stream'
     | '/api/d4ai/tts'
+    | '/api/d4ai/video'
     | '/api/d4ai/voice'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   ApiD4aiLiveRoute: typeof ApiD4aiLiveRoute
   ApiD4aiStreamRoute: typeof ApiD4aiStreamRoute
   ApiD4aiTtsRoute: typeof ApiD4aiTtsRoute
+  ApiD4aiVideoRoute: typeof ApiD4aiVideoRoute
   ApiD4aiVoiceRoute: typeof ApiD4aiVoiceRoute
 }
 
@@ -145,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiD4aiTtsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/d4ai/video': {
+      id: '/api/d4ai/video'
+      path: '/api/d4ai/video'
+      fullPath: '/api/d4ai/video'
+      preLoaderRoute: typeof ApiD4aiVideoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/d4ai/voice': {
       id: '/api/d4ai/voice'
       path: '/api/d4ai/voice'
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiD4aiLiveRoute: ApiD4aiLiveRoute,
   ApiD4aiStreamRoute: ApiD4aiStreamRoute,
   ApiD4aiTtsRoute: ApiD4aiTtsRoute,
+  ApiD4aiVideoRoute: ApiD4aiVideoRoute,
   ApiD4aiVoiceRoute: ApiD4aiVoiceRoute,
 }
 export const routeTree = rootRouteImport
