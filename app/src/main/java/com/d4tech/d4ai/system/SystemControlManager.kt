@@ -1,5 +1,7 @@
 package com.d4tech.d4ai.system
 
+import com.d4tech.d4ai.screen.D4AiAccessibilityService
+
 import android.app.NotificationManager
 import android.app.UiModeManager
 import android.content.ClipData
@@ -467,6 +469,70 @@ class SystemControlManager(private val context: Context) {
     }
 
 
+
+    // -------- SCREEN SEE + TOUCH (Accessibility) --------
+
+    fun readMyScreen(): String {
+        if (!D4AiAccessibilityService.connected()) {
+            return D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+        return D4AiAccessibilityService.readScreen()
+            ?: "I can see the screen service is on but nothing readable right now."
+    }
+
+    fun tapOnScreen(label: String): String {
+        if (!D4AiAccessibilityService.connected()) {
+            return D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+        var ok = false
+        val lock = Object()
+        D4AiAccessibilityService.tap(label) { success ->
+            ok = success
+            synchronized(lock) { lock.notifyAll() }
+        }
+        try {
+            synchronized(lock) { lock.wait(2500) }
+        } catch (_: Exception) {
+        }
+        return if (ok) "Tapped $label." else "I couldn't find "$label" on the screen."
+    }
+
+    fun swipeScreen(direction: String): String {
+        if (!D4AiAccessibilityService.connected()) {
+            return D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+        val ok = D4AiAccessibilityService.swipe(direction.lowercase())
+        return if (ok) "Swiped $direction." else "Swipe failed."
+    }
+
+    fun globalAction(name: String): String {
+        if (!D4AiAccessibilityService.connected()) {
+            return D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+        val ok = D4AiAccessibilityService.global(name)
+        return when (ok) {
+            true -> when (name) {
+                "back" -> "Went back."
+                "home" -> "Home screen."
+                "recents" -> "Opened recent apps."
+                "notifications" -> "Opened notifications."
+                "screenshot" -> "Took a screenshot."
+                "lock_screen" -> "Locked the phone."
+                else -> "Done."
+            }
+            false -> "That action isn't supported on this phone."
+            null -> D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+    }
+
+    fun typeOnScreen(text: String): String {
+        if (!D4AiAccessibilityService.connected()) {
+            return D4AiAccessibilityService.openAccessibilitySettings(context)
+        }
+        val ok = D4AiAccessibilityService.typeText(text)
+        return if (ok) "Typed: $text" else "No text field focused. Open a field first, then ask me to type."
+    }
+
     fun startScreenRecord(): String {
         return try {
             MediaProjectionActivity.requestRecord(context)
@@ -544,6 +610,16 @@ class SystemControlManager(private val context: Context) {
             "screen_record_stop" -> stopScreenRecord()
             "notifications_read" -> readNotifications()
             "notifications_clear" -> clearNotifications()
+            "read_screen" -> readMyScreen()
+            "tap" -> tapOnScreen(arg)
+            "swipe" -> swipeScreen(arg.ifBlank { "up" })
+            "type_text" -> typeOnScreen(arg)
+            "global_back" -> globalAction("back")
+            "global_home" -> globalAction("home")
+            "global_recents" -> globalAction("recents")
+            "global_notifications" -> globalAction("notifications")
+            "global_lock" -> globalAction("lock_screen")
+            "global_screenshot" -> globalAction("screenshot")
             "find_phone" -> findMyPhoneRing()
             "open_settings" -> openSettingsPage(arg.ifBlank { "settings" })
             "routine_morning" -> Routines(context).goodMorning()

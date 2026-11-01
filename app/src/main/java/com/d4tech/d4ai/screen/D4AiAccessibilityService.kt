@@ -210,6 +210,55 @@ class D4AiAccessibilityService : AccessibilityService() {
             }
         }
 
+
+        /** Types into the focused editable field (or first EditText found). */
+        fun typeText(text: String): Boolean {
+            val svc = instance ?: return false
+            val root = svc.rootInActiveWindow ?: return false
+            var target = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (target == null || !target.isEditable) {
+                target = findEditable(root, 0)
+            }
+            if (target == null) return false
+            val args = Bundle()
+            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        }
+
+        private fun findEditable(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+            if (node == null || depth > 25) return null
+            if (node.isEditable) return node
+            for (i in 0 until node.childCount) {
+                findEditable(node.getChild(i), depth + 1)?.let { return it }
+            }
+            return null
+        }
+
+        /** Tap absolute screen coordinates. */
+        fun tapCoords(x: Float, y: Float, done: (Boolean) -> Unit) {
+            val svc = instance ?: run { done(false); return }
+            val path = Path().apply { moveTo(x, y) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+                .build()
+            svc.dispatchGesture(gesture, object : GestureResultCallback() {
+                override fun onCompleted(g: GestureDescription?) = done(true)
+                override fun onCancelled(g: GestureDescription?) = done(false)
+            }, Handler(Looper.getMainLooper()))
+        }
+
+        fun openAccessibilitySettings(context: Context): String {
+            return try {
+                context.startActivity(
+                    android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                "Open Accessibility settings and turn on D4AI, then try again."
+            } catch (_: Exception) {
+                "Open Settings → Accessibility and enable D4AI."
+            }
+        }
+
         /** Convenience for callers that only have a Context. */
         fun isConnectedStatic(context: Context): Boolean = connected()
     }

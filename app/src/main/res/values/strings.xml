@@ -6,5 +6,5 @@
     <string name="custom_url_scheme">com.d4tech.d4ai</string>
     <string name="listening_prompt">D4AI listening</string>
     <string name="sleeping_prompt">D4AI sleeping</string>
-    <string name="accessibility_desc">D4AI uses Accessibility to help with on-screen actions you request (tap, swipe, read screen). You control when it is enabled in system settings.</string>
+    <string name="accessibility_desc">D4AI can read what is on your screen and tap or swipe when you ask (open apps, press buttons, type). Turn this on only if you want that control. D4AI uses Accessibility to help with on-screen actions you request (tap, swipe, read screen). You control when it is enabled in system settings.</string>
 </resources>

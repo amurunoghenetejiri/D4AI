@@ -20,7 +20,7 @@ object CommandParser {
         "battery", "wifi", "wi-fi", "wi fi", "bluetooth", "flashlight", "torch",
         "brightness", "volume", "mute", "unmute", "silent", "vibrate", "dnd",
         "do not disturb", "dark mode", "night mode", "screenshot", "screen shot",
-        "notification", "storage", "ram", "clipboard", "location", "where am i",
+        "notification", "storage", "ram", "clipboard", "location", "where am i", "screen", "tap", "swipe", "scroll",
         "hotspot", "airplane", "nfc", "data saver", "mobile data", "ringer",
         "alarm", "timer", "stopwatch", "wallpaper", "rotate", "orientation",
         "flashlight", "torch", "sos", "compass", "timeout", "font size",
@@ -166,6 +166,41 @@ object CommandParser {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "clipboard_read"))
         }
 
+
+        // Screen see + touch
+        if (lower.contains("read my screen") || lower.contains("what's on my screen") ||
+            lower.contains("what is on my screen") || lower.contains("see my screen") ||
+            lower.contains("what do you see") || lower == "read screen" ||
+            lower.contains("describe the screen") || lower.contains("look at my screen")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "read_screen"))
+        }
+        Regex("""^(?:tap|press|click|touch)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "tap", it.groupValues[1].trim()))
+        }
+        if (lower.contains("swipe up") || lower.contains("scroll up")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "swipe", "up"))
+        }
+        if (lower.contains("swipe down") || lower.contains("scroll down")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "swipe", "down"))
+        }
+        if (lower.contains("swipe left")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "swipe", "left"))
+        }
+        if (lower.contains("swipe right")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "swipe", "right"))
+        }
+        if (lower == "go back" || lower == "back" || lower == "press back") {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "global_back"))
+        }
+        if (lower.contains("recent apps") || lower == "recents" || lower.contains("open recents")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "global_recents"))
+        }
+        if (lower.contains("lock phone") || lower.contains("lock the phone") || lower == "lock screen") {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "global_lock"))
+        }
+        Regex("""^(?:type|write|enter)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "type_text", it.groupValues[1].trim()))
+        }
         // Home / screenshot
         if (lower.contains("good morning") || lower == "morning routine") {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "routine_morning"))
