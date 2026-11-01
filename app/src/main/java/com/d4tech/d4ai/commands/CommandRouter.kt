@@ -101,8 +101,9 @@ class CommandRouter(private val context: Context) {
                         lastImagePath = r.filePath
                         lastImagePrompt = prompt
                         r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") }
+                        val nm = MemoryStore.userName().ifBlank { "boss" }
                         RouteResult.Spoke(
-                            "Image ready, Destiny. Do you want to save it, change something, or generate a totally different image?",
+                            "Image ready, $nm. Save it, change something, or generate a different one?",
                         )
                     } else RouteResult.Spoke(r.message)
                 } catch (e: Exception) {
