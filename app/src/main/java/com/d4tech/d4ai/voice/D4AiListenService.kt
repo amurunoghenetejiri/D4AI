@@ -12,13 +12,18 @@ import com.d4tech.d4ai.R
 import com.d4tech.d4ai.ai.PollinationsClient
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
+import com.d4tech.d4ai.memory.MemoryStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Background listening. Commands work offline. Chat needs network.
+ * Background listening. Commands and multi-step chains work offline.
+ * Questions use Pollinations with conversation memory.
+ *
+ * While awake the floating bubble follows the robot: its mouth moves while
+ * D4AI talks and a cyan ring pulses while it listens — over any app.
  */
 class D4AiListenService : Service() {
 
@@ -28,11 +33,13 @@ class D4AiListenService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        MemoryStore.init(applicationContext)
         router = CommandRouter(applicationContext)
         speech = SpeechEngine(
             context = this,
             onHeard = { text -> handleUtterance(text) },
-            onListening = { },
+            onListening = { on -> BubbleOverlay.setListening(on) },
+            onSpeakingChanged = { on -> BubbleOverlay.setSpeaking(on) },
         )
         speech.init { }
     }
@@ -73,6 +80,7 @@ class D4AiListenService : Service() {
             .setOngoing(true)
             .build()
         startForeground(42, notif)
+        BubbleOverlay.show(applicationContext)
         // Speak then open mic — stays in background
         speech.speak(getString(R.string.listening_prompt), listenAfter = true)
         sendBroadcast(Intent("com.d4tech.d4ai.STATUS").putExtra("awake", true))
@@ -82,12 +90,19 @@ class D4AiListenService : Service() {
         isAwake = false
         speech.speak(getString(R.string.sleeping_prompt), listenAfter = false)
         speech.stopListening()
+        BubbleOverlay.hide()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         sendBroadcast(Intent("com.d4tech.d4ai.STATUS").putExtra("awake", false))
     }
 
     private fun handleUtterance(text: String) {
+        // Multi-step chains run first: "open WhatsApp then set a timer for 5 minutes"
+        val multi = router.handleMulti(text)
+        if (multi != null) {
+            speech.speak(multi, listenAfter = true)
+            return
+        }
         when (val result = router.handle(text)) {
             is RouteResult.Spoke -> {
                 if (result.message == "__SLEEP__") {
@@ -104,9 +119,7 @@ class D4AiListenService : Service() {
                     val answer = try {
                         PollinationsClient.ask(text)
                     } catch (_: Exception) {
-                        "I'm offline for questions right now, but I can still open apps, " +
-                            "change volume, brightness, flashlight, and place calls. " +
-                            "Try saying open WhatsApp, or sleep."
+                        PollinationsClient.offlineReply()
                     }
                     speech.speak(answer, listenAfter = true)
                 }
@@ -116,6 +129,7 @@ class D4AiListenService : Service() {
 
     override fun onDestroy() {
         isAwake = false
+        BubbleOverlay.hide()
         speech.shutdown()
         super.onDestroy()
     }
