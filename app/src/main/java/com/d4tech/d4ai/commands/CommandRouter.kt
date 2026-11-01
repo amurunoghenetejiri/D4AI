@@ -97,7 +97,7 @@ class CommandRouter(private val context: Context) {
             extractImagePrompt(raw)?.let { promptRaw ->
                 val autoSave = low.contains("save")
                 val prompt = promptRaw
-                    .replace(Regex("(?i)and\s+save.*|save\s+it|to\s+my\s+device|to\s+gallery"), "")
+                    .replace(Regex("""(?i)and\s+save.*|save\s+it|to\s+my\s+device|to\s+gallery"""), "")
                     .trim()
                     .ifBlank { promptRaw }
                 return try {
@@ -1118,7 +1118,7 @@ class CommandRouter(private val context: Context) {
                 uri,
                 arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.DATA),
                 "${MediaStore.Audio.Media.TITLE} LIKE ?",
-                arrayOf("%$cleaned%"),
+                arrayOf("%$name%"),
                 MediaStore.Audio.Media.TITLE + " ASC",
             )
             cursor?.use {
