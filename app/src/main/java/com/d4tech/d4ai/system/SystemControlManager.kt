@@ -495,7 +495,7 @@ class SystemControlManager(private val context: Context) {
             synchronized(lock) { lock.wait(2500) }
         } catch (_: Exception) {
         }
-        return if (ok) "Tapped $label." else "I couldn't find "$label" on the screen."
+        return if (ok) "Tapped $label." else "I couldn't find \"$label\" on the screen."
     }
 
     fun swipeScreen(direction: String): String {
