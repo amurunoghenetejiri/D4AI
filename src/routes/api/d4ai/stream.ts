@@ -1,20 +1,28 @@
 /**
- * Streaming D4AI chat — pipes Ollama tokens to the client immediately.
- * POST /api/d4ai/stream
+ * D4AI streaming chat — Text, reasoning and vision all run on the
+ * Pollinations "openai" model (free, unlimited), streamed token by token.
+ * Images (base64 data URLs) are sent as image_url parts for vision.
+ *
+ * POST /api/d4ai/stream  { messages, images?, documentText?, documentName? }
+ * Responds with NDJSON lines: {type:"token",content} … {type:"done"}
  */
 import { createFileRoute } from "@tanstack/react-router";
 
-function baseUrl() {
-  return (process.env["D4AI_BASE_URL"] || "http://147.224.179.220:11434").replace(/\/$/, "");
-}
-function textModel() {
-  return process.env["D4AI_MODEL"] || "d4ai";
-}
-function visionModel() {
-  return process.env["D4AI_VISION_MODEL"] || "d4ai-vision";
-}
-
 type Msg = { role: string; content: string };
+type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+const SYSTEM =
+  "You are D4AI by D4TECH — a friendly, helpful study and life companion. " +
+  "Reply clearly with short paragraphs or bullets. Match the user's language (including Nigerian Pidgin when they use it). " +
+  "Never start with 'Error', 'fetch failed', or raw system messages. " +
+  "Vary your openings naturally (not always the same phrase). For greetings, be warm and brief. " +
+  "If live research notes are attached, use those facts and answer in your own words — do not dump the notes. " +
+  "For math: first state the final answer boldly, then give clear step-by-step solution. " +
+  "Be detailed when helpful, but not bloated.";
+
+function model() {
+  return process.env["D4AI_POLLINATIONS_MODEL"] || "openai";
+}
 
 export const Route = createFileRoute("/api/d4ai/stream")({
   server: {
@@ -35,82 +43,80 @@ export const Route = createFileRoute("/api/d4ai/stream")({
 
           const hasImages = Boolean(body.images?.length);
           const hasDoc = Boolean(body.documentText?.trim());
-          // Fast text model for chat; vision only for raw images
-          const model = hasImages && !hasDoc ? visionModel() : textModel();
-          const numPredict = model === visionModel() ? 2048 : 1024;
 
-          const msgs: Msg[] = messages.map((m) => ({
+          const msgs: { role: string; content: string | Part[] }[] = messages.map((m) => ({
             role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
             content: String(m.content || "").slice(0, 48000),
           }));
 
           if (hasDoc) {
-            const last = msgs[msgs.length - 1];
-            if (last?.role === "user") {
-              last.content += `\n\n---\nContent from "${body.documentName || "document"}":\n${String(body.documentText).slice(0, 16000)}`;
+            const last = msgs[msgs.length - 1]!;
+            if (last.role === "user") {
+              last.content =
+                String(last.content) +
+                `\n\n---\nContent from "${body.documentName || "document"}":\n` +
+                String(body.documentText).slice(0, 16000);
             }
           }
 
-          msgs.unshift({
-            role: "system",
-            content:
-              "You are D4AI by D4TECH — a friendly, helpful study and life companion. " +
-              "Reply clearly with short paragraphs or bullets. Match the user's language (including Nigerian Pidgin when they use it). " +
-              "Never start with 'Error', 'fetch failed', or raw system messages. " +
-              "Vary your openings naturally (not always the same phrase). For greetings, be warm and brief. " +
-              "If live research notes are attached, use those facts and answer in your own words — do not dump the notes. " +
-              "For math: first state the final answer boldly, then give clear step-by-step solution. " +
-              "Be detailed when helpful, but not bloated.",
-          });
+          msgs.unshift({ role: "system", content: SYSTEM });
 
-          const ollamaMessages = msgs.map((m, i) => {
-            if (hasImages && !hasDoc && m.role === "user" && i === msgs.length - 1) {
-              return {
-                role: m.role,
-                content: m.content,
-                images: (body.images || []).map((img) =>
-                  img.replace(/^data:image\/[^;]+;base64,/, ""),
-                ),
-              };
+          // Vision: attach images to the newest user turn as image_url parts
+          if (hasImages) {
+            const last = msgs[msgs.length - 1]!;
+            if (last.role === "user") {
+              const parts: Part[] = [{ type: "text", text: String(last.content) }];
+              for (const img of (body.images || []).slice(0, 4)) {
+                parts.push({
+                  type: "image_url",
+                  image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}` },
+                });
+              }
+              last.content = parts;
             }
-            return { role: m.role, content: m.content };
-          });
+          }
 
-          const ollamaRes = await fetch(`${baseUrl()}/api/chat`, {
+          const res = await fetch("https://text.pollinations.ai/openai", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model,
-              messages: ollamaMessages,
-              stream: true,
-              options: {
-                num_predict: numPredict,
-                temperature: 0.5,
-                top_p: 0.9,
-                num_ctx: 4096,
-              },
-            }),
+            headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+            body: JSON.stringify({ model: model(), messages: msgs, stream: true }),
           });
 
-          if (!ollamaRes.ok || !ollamaRes.body) {
-            const t = await ollamaRes.text().catch(() => "");
-            return Response.json(
-              { error: `D4AI server error (${ollamaRes.status}). ${t.slice(0, 200)}` },
-              { status: 502 },
-            );
-          }
-
-          const reader = ollamaRes.body.getReader();
           const encoder = new TextEncoder();
           const decoder = new TextDecoder();
 
-          const stream = new ReadableStream({
+          const ndjson = new ReadableStream({
             async start(controller) {
-              let buffer = "";
+              const sendToken = (t: string) => {
+                if (t) controller.enqueue(encoder.encode(JSON.stringify({ type: "token", content: t }) + "\n"));
+              };
               try {
+                if (!res.ok || !res.body) {
+                  // Non-streaming fallback — one full reply as a single token
+                  const res2 = await fetch("https://text.pollinations.ai/openai", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: model(), messages: msgs }),
+                  });
+                  const raw = await res2.text();
+                  let token = "";
+                  try {
+                    const j = JSON.parse(raw) as { choices?: { message?: { content?: string } }[] };
+                    token = j.choices?.[0]?.message?.content?.trim() || "";
+                  } catch {
+                    token = raw.trim();
+                  }
+                  sendToken(token || "I could not reach my brain just now — try again in a moment.");
+                  controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
+                  controller.close();
+                  return;
+                }
+
                 controller.enqueue(
-                  encoder.encode(JSON.stringify({ type: "meta", model }) + "\n"),
+                  encoder.encode(JSON.stringify({ type: "meta", model: model() }) + "\n"),
                 );
+                const reader = res.body.getReader();
+                let buffer = "";
                 while (true) {
                   const { done, value } = await reader.read();
                   if (done) break;
@@ -119,43 +125,34 @@ export const Route = createFileRoute("/api/d4ai/stream")({
                   buffer = lines.pop() || "";
                   for (const line of lines) {
                     const trimmed = line.trim();
-                    if (!trimmed) continue;
+                    if (!trimmed.startsWith("data:")) continue;
+                    const payload = trimmed.slice(5).trim();
+                    if (!payload || payload === "[DONE]") continue;
                     try {
-                      const json = JSON.parse(trimmed) as {
-                        message?: { content?: string };
-                        response?: string;
-                        done?: boolean;
+                      const j = JSON.parse(payload) as {
+                        choices?: { delta?: { content?: string }; message?: { content?: string } }[];
                       };
-                      const token = json.message?.content ?? json.response ?? "";
-                      if (token) {
-                        controller.enqueue(
-                          encoder.encode(JSON.stringify({ type: "token", content: token }) + "\n"),
-                        );
-                      }
-                      if (json.done) {
-                        controller.enqueue(
-                          encoder.encode(JSON.stringify({ type: "done" }) + "\n"),
-                        );
-                      }
+                      const token = j.choices?.[0]?.delta?.content || j.choices?.[0]?.message?.content || "";
+                      sendToken(token);
                     } catch {
-                      /* skip */
+                      /* skip malformed chunk */
                     }
                   }
                 }
                 if (buffer.trim()) {
-                  try {
-                    const json = JSON.parse(buffer.trim()) as {
-                      message?: { content?: string };
-                      response?: string;
-                    };
-                    const token = json.message?.content ?? json.response ?? "";
-                    if (token) {
-                      controller.enqueue(
-                        encoder.encode(JSON.stringify({ type: "token", content: token }) + "\n"),
-                      );
+                  for (const line of buffer.split("\n")) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith("data:")) continue;
+                    const payload = trimmed.slice(5).trim();
+                    if (!payload || payload === "[DONE]") continue;
+                    try {
+                      const j = JSON.parse(payload) as {
+                        choices?: { delta?: { content?: string }; message?: { content?: string } }[];
+                      };
+                      sendToken(j.choices?.[0]?.delta?.content || j.choices?.[0]?.message?.content || "");
+                    } catch {
+                      /* ignore */
                     }
-                  } catch {
-                    /* ignore */
                   }
                 }
                 controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
@@ -163,29 +160,19 @@ export const Route = createFileRoute("/api/d4ai/stream")({
               } catch (e) {
                 const msg = e instanceof Error ? e.message : "stream failed";
                 try {
-                  controller.enqueue(
-                    encoder.encode(JSON.stringify({ type: "error", error: msg }) + "\n"),
-                  );
+                  controller.enqueue(encoder.encode(JSON.stringify({ type: "error", error: msg }) + "\n"));
                   controller.close();
                 } catch {
                   controller.error(e);
                 }
               }
             },
-            cancel() {
-              try {
-                void reader.cancel();
-              } catch {
-                /* ignore */
-              }
-            },
           });
 
-          return new Response(stream, {
+          return new Response(ndjson, {
             headers: {
               "Content-Type": "application/x-ndjson; charset=utf-8",
               "Cache-Control": "no-cache, no-transform",
-              Connection: "keep-alive",
               "X-Accel-Buffering": "no",
             },
           });
