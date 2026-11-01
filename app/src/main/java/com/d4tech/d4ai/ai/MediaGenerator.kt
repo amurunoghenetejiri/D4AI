@@ -129,6 +129,13 @@ object MediaGenerator {
                                 lastErr = "decode failed"
                                 return@use
                             }
+                        // Cap memory on low-end devices
+                        if (bmp.width > 1280 || bmp.height > 1600) {
+                            val scale = minOf(1280f / bmp.width, 1600f / bmp.height)
+                            val nw = (bmp.width * scale).toInt().coerceAtLeast(1)
+                            val nh = (bmp.height * scale).toInt().coerceAtLeast(1)
+                            bmp = Bitmap.createScaledBitmap(bmp, nw, nh, true)
+                        }
                         bmp = addD4AIWatermark(bmp)
                         val outBytes = ByteArrayOutputStream().use { bos ->
                             bmp.compress(Bitmap.CompressFormat.JPEG, 95, bos)

@@ -23,6 +23,7 @@ import com.d4tech.d4ai.system.IntentKind
 import com.d4tech.d4ai.system.SystemControlManager
 import com.d4tech.d4ai.appcontrol.AppControlManager
 import com.d4tech.d4ai.appcontrol.AppTaskPlanner
+import com.d4tech.d4ai.appcontrol.UniversalCommands
 import com.d4tech.d4ai.ai.MediaGenerator
 import com.d4tech.d4ai.ai.MediaPreviewActivity
 import kotlinx.coroutines.runBlocking
@@ -58,6 +59,12 @@ class CommandRouter(private val context: Context) {
                 MemoryStore.logCommand(raw.trim().take(180))
                 return RouteResult.Spoke(joined)
             }
+            // Universal 75-style commands
+            UniversalCommands.tryHandle(context, raw)?.let {
+                MemoryStore.logCommand(raw.trim().take(180))
+                return RouteResult.Spoke(it)
+            }
+
             // Media generation (image / video) — broad natural language
             val low = raw.lowercase().trim()
             if (low == "save image" || low == "save it" || low == "save the image" || low == "save photo") {
@@ -108,7 +115,7 @@ class CommandRouter(private val context: Context) {
                         if (autoSave) {
                             RouteResult.Spoke(r.message)
                         } else {
-                            r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") }
+                            try { r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") } } catch (_: Exception) {}
                             val nm = MemoryStore.userName().ifBlank { "boss" }
                             RouteResult.Spoke("Image ready, $nm. Use Save on the preview, or say save image.")
                         }
@@ -124,7 +131,7 @@ class CommandRouter(private val context: Context) {
                     val r = runBlocking { MediaGenerator.generateVideo(context, prompt, save = false) }
                     lastImagePath = r.filePath
                     lastImagePrompt = prompt
-                    r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "video") }
+                    try { r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "video") } } catch (_: Exception) {}
                     RouteResult.Spoke(
                         "Video preview ready. Save it, ask for changes, or generate a different one.",
                     )
