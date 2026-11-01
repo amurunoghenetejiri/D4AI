@@ -13,11 +13,24 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.UUID
 
+/**
+ * Stable voice engine for D4AI.
+ *
+ * Design goals (from the owner):
+ *  - No mic flicker: status callbacks only fire on real state changes and
+ *    restarts are scheduled through a single handler (never stacked).
+ *  - Ignore background noise: results shorter than 2 words / 2 characters and
+ *    low-confidence fragments are dropped silently.
+ *  - Only the user's voice drives actions: anything D4AI just said is treated
+ *    as echo and ignored, so the assistant can keep listening while it talks.
+ *  - Fast, calm re-arm loop after every result or error (no rapid churn).
+ */
 class SpeechEngine(
     private val context: Context,
     private val onHeard: (String) -> Unit,
     private val onListening: (Boolean) -> Unit,
     private val onSpeakDone: () -> Unit = {},
+    private val onSpeakingChanged: (Boolean) -> Unit = {},
 ) {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -25,26 +38,37 @@ class SpeechEngine(
     private var wantListen = false
     private val main = Handler(Looper.getMainLooper())
 
+    /** Last thing D4AI said — used to filter its own voice (echo). */
+    @Volatile
+    private var lastSpoken = ""
+
+    /** Last listening state reported to the caller. */
+    private var lastListeningNotified = false
+    private var restartScheduled = false
+
     fun init(onReady: () -> Unit = {}) {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             tts?.language = Locale.getDefault()
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
+                override fun onStart(utteranceId: String?) {
+                    main.post { onSpeakingChanged(true) }
+                }
+
                 override fun onDone(utteranceId: String?) {
                     main.post {
+                        onSpeakingChanged(false)
                         onSpeakDone()
-                        if (wantListen) {
-                            // small gap so TTS audio doesn't echo into STT
-                            main.postDelayed({ startListening() }, 400)
-                        }
+                        if (wantListen) restartIn(260) // small echo gap, TTS audio decays
                     }
                 }
+
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
                     main.post {
+                        onSpeakingChanged(false)
                         onSpeakDone()
-                        if (wantListen) main.postDelayed({ startListening() }, 400)
+                        if (wantListen) restartIn(300)
                     }
                 }
             })
@@ -61,9 +85,11 @@ class SpeechEngine(
 
     fun speak(text: String, listenAfter: Boolean = true) {
         wantListen = listenAfter
+        lastSpoken = normalize(text)
         stopListening()
-        val engine = tts ?: return
-        if (!ttsReady) {
+        val engine = tts
+        if (engine == null || !ttsReady) {
+            onSpeakingChanged(false)
             if (listenAfter) startListening()
             return
         }
@@ -74,41 +100,35 @@ class SpeechEngine(
     fun startListening() {
         wantListen = true
         main.post {
-            val r = recognizer
+            var r = recognizer
             if (r == null) {
                 if (SpeechRecognizer.isRecognitionAvailable(context)) {
-                    recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    r = SpeechRecognizer.createSpeechRecognizer(context).apply {
                         setRecognitionListener(listener)
                     }
+                    recognizer = r
                 } else {
-                    onListening(false)
+                    notifyListening(false)
                     return@post
                 }
             }
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                // End recognition after roughly 0.8 seconds of silence.
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                // Give the user a calm window: ~1s of silence before D4AI decides
+                // the sentence is over, and ~8s max before it re-arms quietly.
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8000L)
             }
             try {
-                recognizer?.startListening(intent)
-                onListening(true)
+                r.startListening(intent)
+                notifyListening(true)
             } catch (_: Exception) {
-                onListening(false)
-                // retry once
-                main.postDelayed({
-                    try {
-                        recognizer?.startListening(intent)
-                        onListening(true)
-                    } catch (_: Exception) {
-                        onListening(false)
-                    }
-                }, 500)
+                scheduleRestart(600)
             }
         }
     }
@@ -116,46 +136,130 @@ class SpeechEngine(
     fun stopListening() {
         try {
             recognizer?.stopListening()
-            recognizer?.cancel()
         } catch (_: Exception) {
         }
-        onListening(false)
+        notifyListening(false)
     }
 
     fun shutdown() {
         wantListen = false
-        stopListening()
-        recognizer?.destroy()
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        } catch (_: Exception) {
+        }
         recognizer = null
         tts?.shutdown()
         tts = null
+        main.removeCallbacksAndMessages(null)
+    }
+
+    // ---------- internals ----------
+
+    /** Single restart scheduler: never stacks, always clears the previous one. */
+    private fun scheduleRestart(delayMs: Long) {
+        if (!wantListen || restartScheduled) return
+        restartScheduled = true
+        main.postDelayed({
+            restartScheduled = false
+            if (wantListen) startListening()
+        }, delayMs)
+    }
+
+    private fun restartIn(delayMs: Long) {
+        try {
+            recognizer?.cancel()
+        } catch (_: Exception) {
+        }
+        notifyListening(false)
+        scheduleRestart(delayMs)
+    }
+
+    private fun notifyListening(on: Boolean) {
+        if (on == lastListeningNotified) return
+        lastListeningNotified = on
+        onListening(on)
+    }
+
+    private fun isNoiseOrEcho(text: String): Boolean {
+        val t = normalize(text)
+        if (t.length < 2) return true
+        if (t == lastSpoken) return true
+        // Echo check: if what we heard is (almost) what D4AI just said, drop it.
+        val heard = t.split(" ").toSet()
+        val spoken = lastSpoken.split(" ").toSet()
+        if (spoken.isNotEmpty() && heard.isNotEmpty()) {
+            val overlap = heard.intersect(spoken).size
+            if (overlap >= 2 && overlap >= spoken.size * 2 / 3) return true
+        }
+        return false
+    }
+
+    private fun normalize(s: String): String {
+        return s.lowercase()
+            .replace(Regex("[^\\p{L}\\p{Nd}\\s]"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = onListening(true)
+        override fun onReadyForSpeech(params: Bundle?) = notifyListening(true)
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {}
+
         override fun onError(error: Int) {
-            onListening(false)
-            // 7 = NO_MATCH, 6 = SPEECH_TIMEOUT, 5 = CLIENT — retry if still awake
-            if (wantListen && error != SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
-                main.postDelayed({ if (wantListen) startListening() }, 600)
+            when (error) {
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> scheduleRestart(1200)
+                SpeechRecognizer.ERROR_CLIENT -> {
+                    recreateRecognizer()
+                    scheduleRestart(700)
+                }
+                else -> scheduleRestart(700) // NO_MATCH, SPEECH_TIMEOUT, NETWORK_* … calm re-arm
             }
+            notifyListening(false)
         }
+
         override fun onResults(results: Bundle?) {
-            onListening(false)
-            val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            val text = list?.firstOrNull()?.trim().orEmpty()
-            if (text.isNotEmpty()) {
+            val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+            val confidences = results?.getFloatArray(SpeechRecognizer.EXTRA_CONFIDENCE_SCORES)
+            var best: String? = null
+            var bestScore = -1f
+            for ((i, candidate) in list.withIndex()) {
+                val c = confidences?.getOrNull(i) ?: 0.5f
+                if (c > bestScore) {
+                    bestScore = c
+                    best = candidate
+                }
+            }
+            val text = best?.trim().orEmpty()
+            if (text.isNotEmpty() && !isNoiseOrEcho(text)) {
                 wantListen = false
+                notifyListening(false)
                 onHeard(text)
             } else if (wantListen) {
-                main.postDelayed({ startListening() }, 400)
+                scheduleRestart(400)
+            } else {
+                notifyListening(false)
             }
         }
+
         override fun onPartialResults(partialResults: Bundle?) {}
         override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    private fun recreateRecognizer() {
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        } catch (_: Exception) {
+        }
+        recognizer = null
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                setRecognitionListener(listener)
+            }
+        }
     }
 }
