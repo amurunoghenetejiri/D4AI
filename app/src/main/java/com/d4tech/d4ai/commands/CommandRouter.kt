@@ -94,17 +94,24 @@ class CommandRouter(private val context: Context) {
                 }
                 return null
             }
-            extractImagePrompt(raw)?.let { prompt ->
+            extractImagePrompt(raw)?.let { promptRaw ->
+                val autoSave = low.contains("save")
+                val prompt = promptRaw
+                    .replace(Regex("(?i)and\s+save.*|save\s+it|to\s+my\s+device|to\s+gallery"), "")
+                    .trim()
+                    .ifBlank { promptRaw }
                 return try {
-                    val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = false) }
+                    val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = autoSave) }
                     if (r.ok) {
                         lastImagePath = r.filePath
                         lastImagePrompt = prompt
-                        r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") }
-                        val nm = MemoryStore.userName().ifBlank { "boss" }
-                        RouteResult.Spoke(
-                            "Image ready, $nm. Save it, change something, or generate a different one?",
-                        )
+                        if (autoSave) {
+                            RouteResult.Spoke(r.message)
+                        } else {
+                            r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") }
+                            val nm = MemoryStore.userName().ifBlank { "boss" }
+                            RouteResult.Spoke("Image ready, $nm. Use Save on the preview, or say save image.")
+                        }
                     } else RouteResult.Spoke(r.message)
                 } catch (e: Exception) {
                     RouteResult.Spoke("Image error: ${e.message}")
@@ -156,7 +163,12 @@ class CommandRouter(private val context: Context) {
                 when (first.kind) {
                     IntentKind.DEVICE_COMMAND -> {
                         val parts = intents.filter { it.kind == IntentKind.DEVICE_COMMAND }
-                        val spoken = parts.joinToString(" ") { sysCtrl.execute(it.action, it.arg, it.arg2) }
+                        val spoken = parts.joinToString(" ") { intent ->
+                            when (intent.action) {
+                                "call_contact", "call" -> callContact(intent.arg)
+                                else -> sysCtrl.execute(intent.action, intent.arg, intent.arg2)
+                            }
+                        }
                         return RouteResult.Spoke(spoken)
                     }
                     IntentKind.KNOWLEDGE_QUERY -> return RouteResult.NotCommand
