@@ -18,6 +18,7 @@ import android.provider.MediaStore
 import android.telecom.TelecomManager
 import com.d4tech.d4ai.ai.DeviceCommand
 import com.d4tech.d4ai.memory.MemoryStore
+import com.d4tech.d4ai.screen.D4AiAccessibilityService
 import kotlin.math.roundToInt
 
 sealed class RouteResult {
@@ -31,6 +32,7 @@ data class PendingAction(val type: String, val arg: String = "", val arg2: Strin
 /**
  * Offline device-command router. Keep this file free of unresolved Git merge markers.
  * Questions (NotCommand) go to Pollinations. Commands run locally.
+ * Multi-step chains ("open WhatsApp then set a timer for 5 minutes") run first.
  */
 class CommandRouter(private val context: Context) {
 
@@ -39,6 +41,12 @@ class CommandRouter(private val context: Context) {
 
     /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
+        if (pending == null) {
+            handleMulti(raw)?.let { joined ->
+                MemoryStore.logCommand(raw.trim().take(180))
+                return RouteResult.Spoke(joined)
+            }
+        }
         val result = route(raw)
         if (result != RouteResult.NotCommand) MemoryStore.logCommand(raw.trim().take(180))
         return result

@@ -1,6 +1,7 @@
 package com.d4tech.d4ai.ai
 
 import android.content.Context
+import com.d4tech.d4ai.memory.MemoryStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -22,6 +23,9 @@ import java.util.concurrent.TimeUnit
  * 3. GET plain-text endpoint
  * 4. Retry with backoff if rate-limited
  *
+ * Conversation memory: the last ~10 turns are replayed to the model so D4AI
+ * remembers what you said. Every turn is stored on-device only (MemoryStore).
+ *
  * Get a free key: https://enter.pollinations.ai
  * Put it in app settings later, or set POLLINATIONS_KEY in assets/d4ai_config.json
  */
@@ -41,6 +45,7 @@ object PollinationsClient {
 
     /** Call once from Application / MainActivity with app context. */
     fun init(context: Context) {
+        MemoryStore.init(context)
         try {
             val prefs = context.getSharedPreferences("d4ai", Context.MODE_PRIVATE)
             apiKey = prefs.getString("pollinations_key", "").orEmpty().trim()
@@ -69,6 +74,13 @@ object PollinationsClient {
         - Always call yourself D4AI. Never say you are ChatGPT, Claude, Gemini, Grok, or Pollinations.
         - Be clear, friendly, and complete your thoughts.
 
+        Personality (very important):
+        - Talk like a warm, loyal friend and personal assistant — never like a cold robot.
+        - Vary your wording every turn; never repeat the same sentence template twice.
+        - Ask one natural follow-up question when it helps (e.g. "What kind of movie are you in the mood for?").
+        - You may address the user warmly as "boss" or "chief" sometimes — relaxed, never stiff.
+        - If a request is vague, ask one short clarifying question before answering.
+
         Formatting rules (very important):
         - Never use markdown symbols like ** or __ or *** or ### or ``` or ||| or --- tables with pipes.
         - Never use LaTeX or raw math codes like \frac, \sqrt, \times, \pm, \cdot.
@@ -84,6 +96,13 @@ object PollinationsClient {
     """.trimIndent()
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
+        MemoryStore.addChat("user", userMessage)
+        val history = MemoryStore.recentChat(10)
+        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
+        for (turn in history) {
+            messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
+        }
+
         val attempts = buildList {
             // 1) Authenticated gen API (unlimited with sk_)
             if (apiKey.isNotEmpty()) {
@@ -103,8 +122,8 @@ object PollinationsClient {
         for ((index, ep) in attempts.withIndex()) {
             try {
                 val result = when (ep) {
-                    is Endpoint.Chat -> postChat(ep.url, ep.model, ep.auth, userMessage)
-                    Endpoint.Get -> getPlain(userMessage)
+                    is Endpoint.Chat -> postChat(ep.url, ep.model, ep.auth, messages)
+                    Endpoint.Get -> getPlain(history)
                 }
                 if (result != null) {
                     if (isRateLimitText(result)) {
@@ -112,7 +131,9 @@ object PollinationsClient {
                         delay(400L * (index + 1))
                         continue
                     }
-                    return@withContext sanitize(result)
+                    val reply = sanitize(result)
+                    MemoryStore.addChat("assistant", reply)
+                    return@withContext reply
                 }
             } catch (_: Exception) {
                 delay(200)
@@ -122,26 +143,36 @@ object PollinationsClient {
         // Final soft retry on GET after short wait
         delay(1500)
         try {
-            val again = getPlain(userMessage)
-            if (again != null && !isRateLimitText(again)) return@withContext sanitize(again)
+            val again = getPlain(history)
+            if (again != null && !isRateLimitText(again)) {
+                val reply = sanitize(again)
+                MemoryStore.addChat("assistant", reply)
+                return@withContext reply
+            }
         } catch (_: Exception) {
         }
 
-        "I'm a bit busy on the free network lane right now. " +
-            "Commands like open WhatsApp, volume up, or flashlight still work offline. " +
-            "Try the question again in a moment" +
-            if (lastRateLimit != null) "." else "."
+        offlineReply()
     }
 
-    private fun postChat(url: String, model: String, auth: Boolean, userMessage: String): String? {
+    /** Friendly offline answer for questions — all phone commands still work offline. */
+    fun offlineReply(): String {
+        return listOf(
+            "Sorry boss, my smart brain needs internet for that one right now. " +
+                "Everything on your phone still works though — try me with a command, or ask me again in a bit.",
+            "Hmm, I can't reach my knowledge network this moment. Ask me again shortly — meanwhile commands " +
+                "like open WhatsApp, volume up or set an alarm still work perfectly.",
+            "My internet brain is taking a little nap right now, but my hands still work! " +
+                "I can open apps, call, text, set alarms and more. Try that question again in a few minutes.",
+            "That one needs the internet and the network is quiet right now. Give me a minute and ask again — " +
+                "your phone commands all still work offline.",
+        ).random()
+    }
+
+    private fun postChat(url: String, model: String, auth: Boolean, messages: JSONArray): String? {
         val body = JSONObject()
             .put("model", model)
-            .put(
-                "messages",
-                JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    .put(JSONObject().put("role", "user").put("content", userMessage)),
-            )
+            .put("messages", messages)
             .toString()
 
         val builder = Request.Builder()
@@ -174,8 +205,11 @@ object PollinationsClient {
         }
     }
 
-    private fun getPlain(userMessage: String): String? {
-        val prompt = "System: $systemPrompt\nUser: $userMessage\nD4AI:"
+    private fun getPlain(history: List<com.d4tech.d4ai.memory.MemoryTurn>): String? {
+        val convo = history.joinToString("\n") {
+            (if (it.role == "user") "User: " else "D4AI: ") + it.content
+        }
+        val prompt = "System: $systemPrompt\n$convo\nD4AI:"
         val url = "https://text.pollinations.ai/" +
             URLEncoder.encode(prompt, Charsets.UTF_8.name()) +
             "?model=gpt-oss-20b"

@@ -989,11 +989,21 @@ const GLOBAL_CSS = `
 .d4ai-title-grad{background:linear-gradient(90deg,#67e8f9 0%,#3b82f6 45%,#c084fc 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
 `;
 
+const COMMAND_GROUPS: { title: string; emoji: string; examples: string[] }[] = [
+  { title: "Apps", emoji: "📲", examples: ["Open WhatsApp", "Launch Chrome", "Close Instagram", "Delete D4EXAM — D4AI asks before deleting", "Install Snapchat"] },
+  { title: "Calls & Messages", emoji: "📞", examples: ["Call mom — D4AI finds the contact and asks SIM 1 or SIM 2", "Call 08031234567", "Text John saying I'm on my way", "WhatsApp message to Dad saying good morning", "Block 09021234567"] },
+  { title: "Phone Controls", emoji: "🎛️", examples: ["Volume to 50% — then asks if you're satisfied", "Mute / Max volume", "Brightness to 30%", "Flashlight on / off", "Battery, storage and RAM status", "Wi-Fi, Bluetooth, airplane mode, battery saver"] },
+  { title: "Time", emoji: "⏰", examples: ["Set alarm for 6:30 am", "Set timer for 5 minutes", "What time is it"] },
+  { title: "Web & Media", emoji: "🎬", examples: ["Play music — D4AI asks what you feel like", "Play Afrobeats", "Search YouTube for D4TECH", "Search the web for anything", "Navigate to Ikeja City Mall", "Where am I", "Play a movie for me — D4AI asks your taste, then plays from your phone or YouTube", "Take a photo / record video / record audio"] },
+  { title: "Screen Control", emoji: "👁️", examples: ["Read my screen", "Press 2 times 2 equals — in the calculator", "Tap the play button", "Swipe up / down / left / right", "Go back / Recent apps", "Take a screenshot", "Lock my phone", "Show all apps"] },
+  { title: "Memory & Multi-step", emoji: "🧠", examples: ["Remember my tailor's number is 0803...", "Read my notes", "Forget that note", "What was my last command", "Open WhatsApp then set a timer for 5 minutes", "Volume 50 and open Chrome"] },
+];
+
 function D4AiPage() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"home" | "chat">("home");
+  const [tab, setTab] = useState<"home" | "chat" | "commands">("home");
   const [drawer, setDrawer] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
