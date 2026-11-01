@@ -455,9 +455,68 @@ class CommandRouter(private val context: Context) {
                 return RouteResult.Spoke(recordAudio())
         }
 
-        // --- screenshot ---
-        if (lower.contains("screenshot")) {
-            return RouteResult.Spoke("Android does not let apps take screenshots on their own. Press the power and volume-down buttons together.")
+        // --- screen control (accessibility): see, tap, swipe, system actions ---
+        when {
+            matchesAny(lower, "read my screen", "what do you see on my screen", "what's on my screen", "whats on my screen", "describe my screen", "what am i looking at", "what can you see") ->
+                return RouteResult.Spoke(D4AiAccessibilityService.readScreen() ?: screenSetupPrompt())
+            containsAny(lower, "swipe up", "scroll up") ->
+                return RouteResult.Spoke(if (D4AiAccessibilityService.swipe("up")) "Swiped up." else screenSetupPrompt())
+            containsAny(lower, "swipe down", "scroll down") ->
+                return RouteResult.Spoke(if (D4AiAccessibilityService.swipe("down")) "Swiped down." else screenSetupPrompt())
+            containsAny(lower, "swipe left") ->
+                return RouteResult.Spoke(if (D4AiAccessibilityService.swipe("left")) "Swiped left." else screenSetupPrompt())
+            containsAny(lower, "swipe right") ->
+                return RouteResult.Spoke(if (D4AiAccessibilityService.swipe("right")) "Swiped right." else screenSetupPrompt())
+            containsAny(lower, "press back", "go back", "navigate back") -> {
+                when (D4AiAccessibilityService.global("back")) {
+                    true -> return RouteResult.Spoke("Going back.")
+                    else -> return RouteResult.Spoke(screenSetupPrompt())
+                }
+            }
+            containsAny(lower, "recent apps", "open recents", "show recents") -> {
+                when (D4AiAccessibilityService.global("recents")) {
+                    true -> return RouteResult.Spoke("Recent apps.")
+                    else -> return RouteResult.Spoke(screenSetupPrompt())
+                }
+            }
+            containsAny(lower, "show all apps", "open the app drawer", "app drawer", "show my apps") -> {
+                when (D4AiAccessibilityService.global("all_apps")) {
+                    true -> return RouteResult.Spoke("App drawer.")
+                    else -> return RouteResult.Spoke(screenSetupPrompt())
+                }
+            }
+            containsAny(lower, "lock my phone", "lock the phone", "lock screen", "lock my screen") -> {
+                when (D4AiAccessibilityService.global("lock_screen")) {
+                    true -> return RouteResult.Spoke("Locking your phone. See you soon, boss.")
+                    false -> return RouteResult.Spoke("Locking the screen needs Android 9 or newer with D4AI switched on in Accessibility settings.")
+                    null -> return RouteResult.Spoke(screenSetupPrompt())
+                }
+            }
+            lower.contains("screenshot") -> {
+                when (D4AiAccessibilityService.global("screenshot")) {
+                    true -> return RouteResult.Spoke("Screenshot taken.")
+                    false -> return RouteResult.Spoke("Screenshots need Android 9 or newer with D4AI switched on in Accessibility settings. You can also press power and volume down together.")
+                    null -> return RouteResult.Spoke(screenSetupPrompt())
+                }
+            }
+        }
+
+        // --- tap keys on the visible screen ("press 2 times 2 equals" in the calculator) ---
+        if (Regex("\\b(?:press|tap|click|touch|type|enter|calculate|punch)\\b", RegexOption.IGNORE_CASE).containsMatchIn(lower)) {
+            val keys = parseKeySequence(text)
+            if (keys.isNotEmpty() && !D4AiAccessibilityService.connected()) {
+                return RouteResult.Spoke(screenSetupPrompt())
+            }
+            if (keys.isNotEmpty()) {
+                D4AiAccessibilityService.tapSequence(keys) { }
+                return RouteResult.Spoke("Pressing ${keys.joinToString(" ")} now.")
+            }
+            Regex("^(?:press|tap|click|touch)\\s+([a-zA-Z0-9 '\\-]{1,40})$", RegexOption.IGNORE_CASE).find(text)?.let {
+                val label = it.groupValues[1].trim()
+                if (!D4AiAccessibilityService.connected()) return RouteResult.Spoke(screenSetupPrompt())
+                D4AiAccessibilityService.tap(label) { }
+                return RouteResult.Spoke("Tapping \"$label\".")
+            }
         }
 
         // --- close / exit app ---
@@ -472,6 +531,38 @@ class CommandRouter(private val context: Context) {
         }
 
         return RouteResult.NotCommand
+    }
+
+    /** Asks the user to switch D4AI on in Accessibility settings (one-time). */
+    private fun screenSetupPrompt(): String {
+        return try {
+            context.startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            "I need screen control for that. Switch D4AI on in Accessibility settings — I opened the screen for you, then ask me again."
+        } catch (_: Exception) {
+            "I need screen control for that. Open Settings, then Accessibility, and switch D4AI on — then ask me again."
+        }
+    }
+
+    /** "press 2 times 2 equals" → the calculator keys, in order. */
+    private fun parseKeySequence(text: String): List<String> {
+        val tokens = Regex("[a-z0-9.]+").findAll(text.lowercase()).map { it.value }.toList()
+        val keys = ArrayList<String>()
+        for (t in tokens) {
+            when {
+                t.matches(Regex("\\d+")) -> keys.addAll(t.toCharArray().map { it.toString() })
+                t == "." -> keys.add(".")
+                t == "times" || t == "multiplied" || t == "multiply" || t == "x" -> keys.add("×")
+                t == "plus" || t == "add" -> keys.add("+")
+                t == "minus" || t == "subtract" -> keys.add("−")
+                t == "divided" || t == "divide" || t == "over" -> keys.add("÷")
+                t == "equals" || t == "equal" || t == "equalto" -> keys.add("=")
+                t == "percent" -> keys.add("%")
+            }
+        }
+        return keys
     }
 
     /**
