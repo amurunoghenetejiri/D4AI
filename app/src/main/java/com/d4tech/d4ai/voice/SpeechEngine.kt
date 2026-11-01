@@ -223,7 +223,7 @@ class SpeechEngine(
 
         override fun onResults(results: Bundle?) {
             val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
-            val confidences = results?.getFloatArray(SpeechRecognizer.EXTRA_CONFIDENCE_SCORES)
+            val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
             var best: String? = null
             var bestScore = -1f
             for ((i, candidate) in list.withIndex()) {

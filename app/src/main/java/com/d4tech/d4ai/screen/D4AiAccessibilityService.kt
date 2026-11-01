@@ -214,5 +214,4 @@ class D4AiAccessibilityService : AccessibilityService() {
         fun isConnectedStatic(context: Context): Boolean = connected()
     }
 
-    override fun onGestureCancelled() {}
 }

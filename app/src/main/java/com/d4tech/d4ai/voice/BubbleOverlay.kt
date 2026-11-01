@@ -83,7 +83,7 @@ object BubbleOverlay {
                 }
                 addView(faceView, LinearLayout.LayoutParams(70, 70).apply { gravity = Gravity.CENTER_VERTICAL })
                 addView(
-                    TextView(ctx).apply { text = "  " },
+                    TextView(ctx).apply { setText("  ") },
                     LinearLayout.LayoutParams(10, 1),
                 )
                 addView(text)

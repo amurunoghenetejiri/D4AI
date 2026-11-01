@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.d4tech.d4ai.ai.PollinationsClient
+import com.d4tech.d4ai.memory.MemoryStore
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
 import com.d4tech.d4ai.voice.D4AiListenService
