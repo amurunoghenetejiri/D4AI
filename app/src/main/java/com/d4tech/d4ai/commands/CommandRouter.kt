@@ -1182,24 +1182,28 @@ class CommandRouter(private val context: Context) {
 
     private fun callContact(name: String): String {
         return try {
-            val cleaned = name.replace(Regex("(?i)\bemoji\b"), "").trim()
+            val cleaned = name.replace(Regex("""(?i)\bemoji\b"""), "").trim()
             val found = ArrayList<Pair<String, String>>()
+            val needle = cleaned.lowercase().replace(" ", "")
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 arrayOf(
                     ContactsContract.CommonDataKinds.Phone.NUMBER,
                     ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
                 ),
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
-                arrayOf("%$cleaned%"),
+                null,
+                null,
                 null,
             )
             cursor?.use {
                 while (it.moveToNext()) {
                     val num = it.getString(0) ?: continue
-                    val disp = it.getString(1) ?: name
-                    if (found.none { c -> c.second == num }) {
-                        found.add(disp to num)
+                    val disp = it.getString(1) ?: continue
+                    val d = disp.lowercase().replace(" ", "")
+                    if (needle.length >= 2 && (d.contains(needle) || needle.contains(d.take(3)))) {
+                        if (found.none { c -> c.second == num }) {
+                            found.add(disp to num)
+                        }
                     }
                 }
             }
