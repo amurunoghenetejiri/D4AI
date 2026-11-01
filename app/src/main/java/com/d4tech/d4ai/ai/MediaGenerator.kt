@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,8 +23,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
- * D4AI image generation via Pollinations FLUX.
- * Portrait 1024×1280, no Pollinations logo, D4AI watermark, ultra-sharp prompts.
+ * D4AI image generation via Pollinations.
+ * Prefer free endpoints: model=flux often returns 402, so we try plain URLs first.
  */
 object MediaGenerator {
 
@@ -36,8 +37,7 @@ object MediaGenerator {
 
     private val humanWords = listOf(
         "boy", "girl", "man", "woman", "person", "people", "face", "body",
-        "child", "kid", "baby", "human", "lady", "gentleman", "portrait",
-        "selfie", "actor", "actress", "model", "singer", "dancer",
+        "child", "kid", "baby", "human", "lady", "portrait", "singer", "dancer",
     )
 
     data class GenResult(
@@ -48,7 +48,6 @@ object MediaGenerator {
         val bytes: ByteArray? = null,
     )
 
-    /** Pick flux-realism for humans, flux otherwise. Never turbo. */
     fun selectModel(userPrompt: String): String {
         val l = userPrompt.lowercase()
         return if (humanWords.any { l.contains(it) }) "flux-realism" else "flux"
@@ -56,22 +55,30 @@ object MediaGenerator {
 
     fun enhancePrompt(userPrompt: String): String {
         val suffix =
-            ", ultra realistic photo, 8k resolution, sharp focus, highly detailed skin texture, " +
-                "cinematic lighting, professional DSLR photography, natural colors, masterpiece"
+            ", ultra realistic photo, sharp focus, highly detailed, cinematic lighting, natural colors"
         val base = userPrompt.trim().trimEnd(',', '.', ' ')
-        return if (base.contains("ultra realistic", ignoreCase = true)) base else base + suffix
+        return if (base.contains("ultra realistic", ignoreCase = true)) base else "$base$suffix"
     }
 
-    fun buildImageUrl(userPrompt: String): String {
-        val model = selectModel(userPrompt)
+    /** Build candidate URLs — free path first (no model / no enhance), then quality params. */
+    fun candidateUrls(userPrompt: String): List<String> {
         val enhanced = enhancePrompt(userPrompt)
-        val encoded = URLEncoder.encode(enhanced, "UTF-8")
-        val seed = Random.nextInt(1, Int.MAX_VALUE)
-        return "https://image.pollinations.ai/prompt/$encoded" +
-            "?model=$model&width=1024&height=1280&enhance=true&nologo=true&seed=$seed"
+        val q1 = URLEncoder.encode(enhanced, "UTF-8")
+        val q0 = URLEncoder.encode(userPrompt.trim(), "UTF-8")
+        val seed = Random.nextInt(1, 1_000_000_000)
+        val model = selectModel(userPrompt)
+        return listOf(
+            // Most reliable free forms (tested 200 JPEG)
+            "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true",
+            "https://pollinations.ai/p/$q0",
+            // Optional model attempts (may 402 on free tier — tried last)
+            "https://image.pollinations.ai/prompt/$q1?model=$model&width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q0?model=flux&width=1024&height=1280&nologo=true&seed=$seed",
+        )
     }
 
-    /** Draw semi-transparent "D4AI" at bottom-right. */
     fun addD4AIWatermark(bitmap: Bitmap): Bitmap {
         val out = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return bitmap
         val canvas = Canvas(out)
@@ -91,63 +98,73 @@ object MediaGenerator {
 
     suspend fun generateImage(context: Context, prompt: String, save: Boolean): GenResult =
         withContext(Dispatchers.IO) {
-            val url = buildImageUrl(prompt)
-            try {
-                val req = Request.Builder().url(url).header("User-Agent", "D4AI/1.0").get().build()
-                http.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) {
-                        return@withContext GenResult(false, "Image API error ${res.code}. Try again.")
+            var lastErr = "unknown"
+            for ((i, url) in candidateUrls(prompt).withIndex()) {
+                try {
+                    if (i > 0) delay(400)
+                    val req = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0 D4AI/1.0")
+                        .header("Accept", "image/*,*/*")
+                        .get()
+                        .build()
+                    http.newCall(req).execute().use { res ->
+                        if (!res.isSuccessful) {
+                            lastErr = "HTTP ${res.code}"
+                            return@use
+                        }
+                        val raw = res.body?.bytes()
+                        if (raw == null || raw.size < 800) {
+                            lastErr = "empty body"
+                            return@use
+                        }
+                        val isJpeg = raw.size > 2 && raw[0] == 0xFF.toByte() && raw[1] == 0xD8.toByte()
+                        val isPng = raw.size > 3 && raw[0] == 0x89.toByte() && raw[1] == 0x50.toByte()
+                        if (!isJpeg && !isPng) {
+                            lastErr = "not image bytes"
+                            return@use
+                        }
+                        var bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size)
+                            ?: run {
+                                lastErr = "decode failed"
+                                return@use
+                            }
+                        bmp = addD4AIWatermark(bmp)
+                        val outBytes = ByteArrayOutputStream().use { bos ->
+                            bmp.compress(Bitmap.CompressFormat.JPEG, 95, bos)
+                            bos.toByteArray()
+                        }
+                        val cache = File(context.cacheDir, "d4ai_last_${System.currentTimeMillis()}.jpg")
+                        FileOutputStream(cache).use { it.write(outBytes) }
+                        lastPreviewPath = cache.absolutePath
+                        lastPrompt = prompt
+                        if (save) {
+                            val gallery = saveJpegToGallery(context, outBytes)
+                            return@withContext GenResult(true, "Saved to gallery ($gallery).", gallery, url, outBytes)
+                        }
+                        return@withContext GenResult(true, "Image ready.", cache.absolutePath, url, outBytes)
                     }
-                    val raw = res.body?.bytes()
-                    if (raw == null || raw.size < 800) {
-                        return@withContext GenResult(false, "Empty image from server.")
-                    }
-                    var bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size)
-                        ?: return@withContext GenResult(false, "Could not decode image.")
-                    bmp = addD4AIWatermark(bmp)
-                    val outBytes = ByteArrayOutputStream().use { bos ->
-                        bmp.compress(Bitmap.CompressFormat.JPEG, 95, bos)
-                        bos.toByteArray()
-                    }
-                    val cache = File(context.cacheDir, "d4ai_last_${System.currentTimeMillis()}.jpg")
-                    FileOutputStream(cache).use { it.write(outBytes) }
-                    // Always keep last path for preview / save
-                    lastPreviewPath = cache.absolutePath
-                    lastPrompt = prompt
-                    if (save) {
-                        val gallery = saveJpegToGallery(context, outBytes)
-                        return@withContext GenResult(
-                            true,
-                            "Saved to gallery ($gallery).",
-                            gallery,
-                            url,
-                            outBytes,
-                        )
-                    }
-                    GenResult(
-                        true,
-                        "Image ready.",
-                        cache.absolutePath,
-                        url,
-                        outBytes,
-                    )
+                } catch (e: Exception) {
+                    lastErr = e.message ?: "error"
                 }
-            } catch (e: Exception) {
-                GenResult(false, "Image generation failed: ${e.message}")
             }
+            GenResult(
+                false,
+                "Image generation failed ($lastErr). Check internet and try again in a moment.",
+            )
         }
 
-    /**
-     * Video: generate a sharp cinematic still as keyframe + open as preview.
-     * Full MP4 motion needs external HF/FFmpeg; still gives user a playable preview path.
-     */
     suspend fun generateVideo(context: Context, prompt: String, save: Boolean): GenResult {
-        val cinematic = "$prompt, cinematic film still, 8k, ultra sharp, motion blur subtle, masterpiece"
-        val r = generateImage(context, cinematic, save)
+        // Free tier: sharp cinematic still as playable preview frame
+        val r = generateImage(
+            context,
+            "$prompt, cinematic film still frame, ultra sharp 8k, dramatic lighting",
+            save,
+        )
         if (!r.ok) return r
         return r.copy(
             message = if (save) r.message
-            else "Video keyframe ready for: $prompt. Preview is open. Say save image to keep it, or describe changes.",
+            else "Video keyframe ready. Preview is on screen — Save or ask for changes.",
         )
     }
 

@@ -625,6 +625,7 @@ class SystemControlManager(private val context: Context) {
             "global_notifications" -> globalAction("notifications")
             "global_lock" -> globalAction("lock_screen")
             "global_screenshot" -> globalAction("screenshot")
+            "call_contact" -> "Use call from the main router." // routed in CommandRouter
             "set_user_name" -> {
                 com.d4tech.d4ai.memory.MemoryStore.setUserName(arg)
                 "Got it. I'll remember your name as $arg."

@@ -142,6 +142,10 @@ object CommandParser {
         }
 
         // Time / date / storage / clipboard
+        Regex("""^(?:call|dial)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            val target = it.groupValues[1].trim()
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "call_contact", target))
+        }
         Regex("""(?:my name is|call me|remember my name(?:\s+is)?)\s+([a-zA-Z ]{2,40})$""", RegexOption.IGNORE_CASE).find(text)?.let {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "set_user_name", it.groupValues[1].trim()))
         }

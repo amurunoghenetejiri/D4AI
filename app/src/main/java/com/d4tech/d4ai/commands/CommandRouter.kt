@@ -1106,7 +1106,7 @@ class CommandRouter(private val context: Context) {
                 uri,
                 arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.DATA),
                 "${MediaStore.Audio.Media.TITLE} LIKE ?",
-                arrayOf("%$name%"),
+                arrayOf("%$cleaned%"),
                 MediaStore.Audio.Media.TITLE + " ASC",
             )
             cursor?.use {
@@ -1170,6 +1170,7 @@ class CommandRouter(private val context: Context) {
 
     private fun callContact(name: String): String {
         return try {
+            val cleaned = name.replace(Regex("(?i)\bemoji\b"), "").trim()
             val found = ArrayList<Pair<String, String>>()
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
@@ -1178,7 +1179,7 @@ class CommandRouter(private val context: Context) {
                     ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
                 ),
                 "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
-                arrayOf("%$name%"),
+                arrayOf("%$cleaned%"),
                 null,
             )
             cursor?.use {

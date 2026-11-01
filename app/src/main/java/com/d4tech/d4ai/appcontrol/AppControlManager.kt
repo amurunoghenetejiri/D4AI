@@ -47,6 +47,7 @@ class AppControlManager(private val context: Context) {
         return when (step.type) {
             StepType.OPEN_APP -> {
                 val r = sys.openApp(step.arg)
+                Thread.sleep(1200)
                 "Opening ${step.arg}. $r"
             }
             StepType.WAIT -> {
@@ -54,9 +55,15 @@ class AppControlManager(private val context: Context) {
                 ""
             }
             StepType.TAP_TEXT -> {
-                if (!ensureA11y()) return a11yPrompt()
+                if (!D4AiAccessibilityService.connected()) {
+                    if (!a11yEnabled()) return a11yPrompt()
+                    Thread.sleep(1000)
+                    if (!D4AiAccessibilityService.connected()) {
+                        return "Accessibility is on but not connected yet. Open D4AI once, then try the command again."
+                    }
+                }
                 val ok = tapSync(step.arg)
-                if (ok) "Tapped ${step.arg}." else "Couldn't find ${step.arg}."
+                if (ok) "Tapped ${step.arg}." else "Couldn't find ${step.arg} on screen. Say read my screen."
             }
             StepType.TYPE -> {
                 if (!ensureA11y()) return a11yPrompt()
@@ -153,6 +160,15 @@ class AppControlManager(private val context: Context) {
 
     private fun tapSync(label: String): Boolean {
         if (label.isBlank()) return false
+        // Wait briefly for accessibility service connection after user enabled it
+        if (!D4AiAccessibilityService.connected()) {
+            if (a11yEnabled()) {
+                Thread.sleep(800)
+            } else {
+                return false
+            }
+        }
+        if (!D4AiAccessibilityService.connected()) return false
         val latch = CountDownLatch(1)
         var ok = false
         main.post {
@@ -161,11 +177,12 @@ class AppControlManager(private val context: Context) {
                 latch.countDown()
             }
         }
-        latch.await(3, TimeUnit.SECONDS)
+        latch.await(4, TimeUnit.SECONDS)
         return ok
     }
 
     private fun ensureA11y() = D4AiAccessibilityService.connected()
+    private fun a11yEnabled() = D4AiAccessibilityService.ready(context)
     private fun a11yPrompt() = D4AiAccessibilityService.openAccessibilitySettings(context)
 
     fun readMessagesStyle(): String {

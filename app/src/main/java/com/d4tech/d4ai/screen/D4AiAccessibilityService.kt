@@ -41,6 +41,23 @@ class D4AiAccessibilityService : AccessibilityService() {
 
         fun connected(): Boolean = instance != null
 
+        /** True if user enabled D4AI in system Accessibility settings (even before onServiceConnected). */
+        fun isEnabledInSettings(context: Context): Boolean {
+            return try {
+                val flat = android.provider.Settings.Secure.getString(
+                    context.contentResolver,
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                ) ?: return false
+                val pkg = context.packageName
+                flat.split(':').any { it.contains(pkg, ignoreCase = true) && it.contains("D4AiAccessibility", ignoreCase = true) } ||
+                    flat.contains(pkg, ignoreCase = true)
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        fun ready(context: Context): Boolean = connected() || isEnabledInSettings(context)
+
         // ---------- see the screen ----------
 
         /** Reads the visible text of the active window, most useful lines first. */
