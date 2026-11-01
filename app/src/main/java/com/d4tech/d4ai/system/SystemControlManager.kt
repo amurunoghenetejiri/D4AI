@@ -557,12 +557,14 @@ class SystemControlManager(private val context: Context) {
     }
 
     fun takeScreenshotCapture(): String {
-        return try {
-            MediaProjectionActivity.requestShot(context)
-            "Confirm screen capture permission for the screenshot."
-        } catch (e: Exception) {
-            "Couldn't start screenshot: ${e.message}"
+        // Prefer system accessibility screenshot — no screen-share dialog.
+        if (D4AiAccessibilityService.connected()) {
+            val ok = D4AiAccessibilityService.global("screenshot")
+            if (ok == true) return "Screenshot taken. Check your gallery or screenshots album."
+            if (ok == false) return "Screenshot action not supported on this Android version."
         }
+        return D4AiAccessibilityService.openAccessibilitySettings(context) +
+            " Enable D4AI Accessibility so I can take screenshots without screen-share permission."
     }
 
     fun readNotifications(n: Int = 5): String = D4AiNotificationListener.readLast(n)
@@ -621,6 +623,16 @@ class SystemControlManager(private val context: Context) {
             "global_notifications" -> globalAction("notifications")
             "global_lock" -> globalAction("lock_screen")
             "global_screenshot" -> globalAction("screenshot")
+            "sleep" -> listOf(
+                "Alright, I'll rest now. Call me when you need me.",
+                "Going quiet. Say D4AI when you want me back.",
+                "Goodbye for now — I've got you whenever you're ready.",
+                "Sleep mode. Take care.",
+            ).random()
+            "generate_image" -> "Generating image… please wait."
+            "generate_video" -> "Working on video… please wait."
+            "save_last_image" -> "Say generate image first, then save image."
+            "show_last_image" -> "Say generate image first."
             "remember" -> {
                 AppMemoryManager(context).rememberStatement(arg.lowercase(), arg2)
                 "Okay, I'll remember ${arg} is ${arg2}."

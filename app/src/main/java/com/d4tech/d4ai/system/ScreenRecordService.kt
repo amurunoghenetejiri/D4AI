@@ -86,8 +86,10 @@ class ScreenRecordService : Service() {
             val metrics = DisplayMetrics()
             @Suppress("DEPRECATION")
             (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
-            val width = metrics.widthPixels
-            val height = metrics.heightPixels
+            var width = metrics.widthPixels
+            var height = metrics.heightPixels
+            if (width % 2 != 0) width -= 1
+            if (height % 2 != 0) height -= 1
             val density = metrics.densityDpi
 
             val dir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "D4AI")

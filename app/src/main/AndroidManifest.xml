@@ -94,7 +94,7 @@
             android:name=".system.MediaProjectionActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            android:theme="@style/AppTheme" />
 
         <service
             android:name=".system.ScreenRecordService"

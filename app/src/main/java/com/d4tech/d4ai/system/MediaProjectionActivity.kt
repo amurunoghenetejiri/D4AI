@@ -5,41 +5,63 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.util.Log
 
 /**
- * One-shot UI to request MediaProjection consent, then starts ScreenRecordService.
+ * Requests MediaProjection consent then hands the result to ScreenRecordService.
+ * Must remain a real Activity (not translucent-only on some OEMs) so the result returns.
  */
 class MediaProjectionActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_RECORD
-        startActivityForResult(mgr.createScreenCaptureIntent(), REQ)
+        try {
+            val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            @Suppress("DEPRECATION")
+            startActivityForResult(mgr.createScreenCaptureIntent(), REQ)
+        } catch (e: Exception) {
+            Log.e(TAG, "request failed", e)
+            lastMessage = "Couldn't open screen capture permission: ${e.message}"
+            finish()
+        }
     }
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ && resultCode == RESULT_OK && data != null) {
-            val svc = Intent(this, ScreenRecordService::class.java).apply {
-                action = if (mode == MODE_SHOT) ScreenRecordService.ACTION_SHOT else ScreenRecordService.ACTION_START
-                putExtra(ScreenRecordService.EXTRA_RESULT_CODE, resultCode)
-                putExtra(ScreenRecordService.EXTRA_DATA, data)
-            }
-            try {
-                startForegroundService(svc)
-            } catch (_: Exception) {
-                startService(svc)
-            }
-            lastMessage = if (mode == MODE_SHOT) "Capturing screenshot…" else "Screen recording started."
-        } else {
+        if (requestCode != REQ) {
+            finish()
+            return
+        }
+        if (resultCode != RESULT_OK || data == null) {
             lastMessage = "Screen capture permission denied."
+            finish()
+            return
+        }
+        val action = if (mode == MODE_SHOT) ScreenRecordService.ACTION_SHOT else ScreenRecordService.ACTION_START
+        val svc = Intent(this, ScreenRecordService::class.java).apply {
+            this.action = action
+            putExtra(ScreenRecordService.EXTRA_RESULT_CODE, resultCode)
+            putExtra(ScreenRecordService.EXTRA_DATA, data)
+        }
+        try {
+            startForegroundService(svc)
+            lastMessage = if (mode == MODE_SHOT) "Capturing…" else "Recording started."
+        } catch (e: Exception) {
+            try {
+                startService(svc)
+                lastMessage = if (mode == MODE_SHOT) "Capturing…" else "Recording started."
+            } catch (e2: Exception) {
+                lastMessage = "Couldn't start recorder: ${e2.message}"
+                Log.e(TAG, "start service", e2)
+            }
         }
         finish()
     }
 
     companion object {
+        private const val TAG = "D4AIProj"
         const val REQ = 9911
         const val EXTRA_MODE = "mode"
         const val MODE_RECORD = "record"
@@ -52,7 +74,7 @@ class MediaProjectionActivity : Activity() {
             ctx.startActivity(
                 Intent(ctx, MediaProjectionActivity::class.java)
                     .putExtra(EXTRA_MODE, MODE_RECORD)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             )
         }
 
@@ -61,7 +83,7 @@ class MediaProjectionActivity : Activity() {
             ctx.startActivity(
                 Intent(ctx, MediaProjectionActivity::class.java)
                     .putExtra(EXTRA_MODE, MODE_SHOT)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             )
         }
     }

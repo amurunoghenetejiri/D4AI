@@ -142,6 +142,9 @@ object CommandParser {
         }
 
         // Time / date / storage / clipboard
+        if (matchesAny(lower, "sleep", "go to sleep", "stop listening", "d4ai sleep", "sleep d4ai", "stop d4ai", "goodbye d4ai")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "sleep"))
+        }
         if (lower.contains("what time") || lower == "time" || lower.contains("current time")) {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "time"))
         }

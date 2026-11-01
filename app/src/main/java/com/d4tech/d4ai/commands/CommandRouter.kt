@@ -23,6 +23,8 @@ import com.d4tech.d4ai.system.IntentKind
 import com.d4tech.d4ai.system.SystemControlManager
 import com.d4tech.d4ai.appcontrol.AppControlManager
 import com.d4tech.d4ai.appcontrol.AppTaskPlanner
+import com.d4tech.d4ai.ai.MediaGenerator
+import kotlinx.coroutines.runBlocking
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
 import kotlin.math.roundToInt
 
@@ -45,6 +47,8 @@ class CommandRouter(private val context: Context) {
     private var torchOn = false
     private val sysCtrl = SystemControlManager(context)
     private val appCtrl = AppControlManager(context)
+    private var lastImagePath: String? = null
+    private var lastImagePrompt: String? = null
 
     /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
@@ -53,6 +57,48 @@ class CommandRouter(private val context: Context) {
                 MemoryStore.logCommand(raw.trim().take(180))
                 return RouteResult.Spoke(joined)
             }
+            // Media generation (image / video)
+            val low = raw.lowercase().trim()
+            if (low == "save image" || low == "save it" || low == "save the image") {
+                val path = lastImagePath
+                val prompt = lastImagePrompt
+                if (path == null || prompt == null) {
+                    return RouteResult.Spoke("No recent image to save. Say generate image of … first.")
+                }
+                return try {
+                    val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = true) }
+                    RouteResult.Spoke(r.message)
+                } catch (e: Exception) {
+                    RouteResult.Spoke("Save failed: ${e.message}")
+                }
+            }
+            Regex("""(?:generate|create|draw|make)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of\s+)?(.+)""", RegexOption.IGNORE_CASE).find(raw)?.let { m ->
+                val prompt = m.groupValues[1].trim()
+                return try {
+                    val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = false) }
+                    if (r.ok) {
+                        lastImagePath = r.filePath
+                        lastImagePrompt = prompt
+                        RouteResult.Spoke(
+                            "Image generated for: $prompt. Do you want me to save it to your gallery, or just keep the preview? Say save image or generate another.",
+                        )
+                    } else RouteResult.Spoke(r.message)
+                } catch (e: Exception) {
+                    RouteResult.Spoke("Image error: ${e.message}")
+                }
+            }
+            Regex("""(?:generate|create|make)\s+(?:a\s+)?video\s+(?:of\s+)?(.+)""", RegexOption.IGNORE_CASE).find(raw)?.let { m ->
+                val prompt = m.groupValues[1].trim()
+                return try {
+                    val r = runBlocking { MediaGenerator.generateVideoStub(context, prompt, save = false) }
+                    lastImagePath = r.filePath
+                    lastImagePrompt = prompt
+                    RouteResult.Spoke(r.message)
+                } catch (e: Exception) {
+                    RouteResult.Spoke("Video error: ${e.message}")
+                }
+            }
+
             // App task planner (multi-step human-like flows)
             if (AppTaskPlanner.plan(raw).isNotEmpty()) {
                 return try {
