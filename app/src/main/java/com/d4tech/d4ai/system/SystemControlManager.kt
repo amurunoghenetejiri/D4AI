@@ -625,12 +625,19 @@ class SystemControlManager(private val context: Context) {
             "global_notifications" -> globalAction("notifications")
             "global_lock" -> globalAction("lock_screen")
             "global_screenshot" -> globalAction("screenshot")
-            "sleep" -> listOf(
-                "Alright, I'll rest now. Call me when you need me.",
-                "Going quiet. Say D4AI when you want me back.",
-                "Goodbye for now — I've got you whenever you're ready.",
-                "Sleep mode. Take care.",
-            ).random()
+            "set_user_name" -> {
+                com.d4tech.d4ai.memory.MemoryStore.setUserName(arg)
+                "Got it. I'll remember your name as $arg."
+            }
+            "sleep" -> {
+                val n = com.d4tech.d4ai.memory.MemoryStore.userName().ifBlank { "boss" }
+                listOf(
+                    "Goodnight $n. I've got you whenever you need me.",
+                    "Bye $n. Say D4AI when you're back.",
+                    "Sleep mode, $n. Take care.",
+                    "Goodbye $n — resting now.",
+                ).random()
+            }
             "generate_image" -> {
                 try {
                     val r = runBlocking { MediaGenerator.generateImage(context, arg.ifBlank { "abstract art" }, save = false) }

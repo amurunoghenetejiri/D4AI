@@ -90,8 +90,12 @@ object PollinationsClient {
 
         Behavior:
         - Answer questions fully and usefully.
-        - Keep conversation context: short follow-ups like "mention 2 applications", "explain more",
-          "and the second one?" always refer to the previous topic in this chat.
+        - CRITICAL continuity: short follow-ups ("give me three applications", "which country",
+          "what year", "mention 2 fields") ALWAYS refer to the last topic you discussed.
+          Never switch topic unless the user clearly starts a new one.
+        - Address the user by name when known (e.g. Destiny, boss, my guy) naturally, not every sentence.
+        - You may receive a silent SCREEN CONTEXT block. Use it to answer about what is on screen
+          (chat replies, game moves) without reading the whole screen aloud unless asked.
         - Device commands (open apps, battery, flashlight, screenshot, screen record, generate image/video) are handled by the phone. Never say you cannot generate images or videos — the app does that.
         - Device commands are handled by the phone OS; confirm briefly when relevant.
         - If asked your name: "I'm D4AI, your personal Android assistant by D4TECH."
@@ -101,8 +105,23 @@ object PollinationsClient {
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
         MemoryStore.addChat("user", userMessage)
-        val history = MemoryStore.recentChat(10)
-        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
+        val history = MemoryStore.recentChat(16)
+        val name = MemoryStore.userName()
+        val screen = try {
+            com.d4tech.d4ai.screen.D4AiAccessibilityService.readScreen()
+        } catch (_: Exception) {
+            null
+        }
+        val sys = buildString {
+            append(systemPrompt)
+            if (name.isNotBlank()) append("\nUser name: ").append(name).append(". Use it warmly sometimes.")
+            if (!screen.isNullOrBlank()) {
+                append("\n\nSCREEN CONTEXT (silent, on device now):\n")
+                append(screen.take(1200))
+            }
+            append("\n\nLast user message may be a follow-up. Stay on the previous topic if it is short.")
+        }
+        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", sys))
         for (turn in history) {
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }

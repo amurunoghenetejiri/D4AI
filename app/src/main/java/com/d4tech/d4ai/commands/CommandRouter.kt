@@ -24,6 +24,7 @@ import com.d4tech.d4ai.system.SystemControlManager
 import com.d4tech.d4ai.appcontrol.AppControlManager
 import com.d4tech.d4ai.appcontrol.AppTaskPlanner
 import com.d4tech.d4ai.ai.MediaGenerator
+import com.d4tech.d4ai.ai.MediaPreviewActivity
 import kotlinx.coroutines.runBlocking
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
 import kotlin.math.roundToInt
@@ -66,7 +67,7 @@ class CommandRouter(private val context: Context) {
                     return RouteResult.Spoke("No recent image. Say generate image of something first.")
                 }
                 return try {
-                    val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = true) }
+                    val r = MediaGenerator.saveLastToGallery(context)
                     RouteResult.Spoke(r.message)
                 } catch (e: Exception) {
                     RouteResult.Spoke("Save failed: ${e.message}")
@@ -99,8 +100,9 @@ class CommandRouter(private val context: Context) {
                     if (r.ok) {
                         lastImagePath = r.filePath
                         lastImagePrompt = prompt
+                        r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "image") }
                         RouteResult.Spoke(
-                            "Image ready for: $prompt. Say save image to keep it in gallery, or ask for another image.",
+                            "Image ready, Destiny. Do you want to save it, change something, or generate a totally different image?",
                         )
                     } else RouteResult.Spoke(r.message)
                 } catch (e: Exception) {
@@ -114,7 +116,10 @@ class CommandRouter(private val context: Context) {
                     val r = runBlocking { MediaGenerator.generateVideo(context, prompt, save = false) }
                     lastImagePath = r.filePath
                     lastImagePrompt = prompt
-                    RouteResult.Spoke(r.message)
+                    r.filePath?.let { MediaPreviewActivity.open(context, it, prompt, "video") }
+                    RouteResult.Spoke(
+                        "Video preview ready. Save it, ask for changes, or generate a different one.",
+                    )
                 } catch (e: Exception) {
                     RouteResult.Spoke("Video error: ${e.message}")
                 }
@@ -1160,8 +1165,11 @@ class CommandRouter(private val context: Context) {
         }
     }
 
+    private var contactCandidates: List<Pair<String, String>> = emptyList()
+
     private fun callContact(name: String): String {
         return try {
+            val found = ArrayList<Pair<String, String>>()
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 arrayOf(
@@ -1173,17 +1181,27 @@ class CommandRouter(private val context: Context) {
                 null,
             )
             cursor?.use {
-                if (it.moveToFirst()) {
-                    val num = it.getString(0)
-                    val disp = it.getString(1)
-                    if (simCount() >= 2) {
-                        pending = PendingAction("call_sim", num)
-                        return "Found $disp. Say SIM 1 or SIM 2 to call."
+                while (it.moveToNext()) {
+                    val num = it.getString(0) ?: continue
+                    val disp = it.getString(1) ?: name
+                    if (found.none { c -> c.second == num }) {
+                        found.add(disp to num)
                     }
-                    return placeCall(num) + " ($disp)"
                 }
             }
-            "No contact found named $name."
+            if (found.isEmpty()) return "No contact matching $name."
+            if (found.size == 1) {
+                val (disp, num) = found[0]
+                if (simCount() >= 2) {
+                    pending = PendingAction("call_sim", num)
+                    return "Found $disp. Say SIM 1 or SIM 2."
+                }
+                return placeCall(num) + " ($disp)"
+            }
+            contactCandidates = found
+            pending = PendingAction("call_pick", name)
+            val list = found.mapIndexed { i, (disp, _) -> "${i + 1}. $disp" }.joinToString(". ")
+            "I found several contacts: $list. Say call number 1, or 2, and so on."
         } catch (_: SecurityException) {
             "Contacts permission is required to call by name."
         } catch (e: Exception) {

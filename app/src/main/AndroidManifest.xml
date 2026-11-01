@@ -91,6 +91,11 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ai.MediaPreviewActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
+        <activity
             android:name=".system.MediaProjectionActivity"
             android:exported="false"
             android:excludeFromRecents="true"

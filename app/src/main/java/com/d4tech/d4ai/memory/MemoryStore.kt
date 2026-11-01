@@ -126,4 +126,17 @@ object MemoryStore {
     fun clearChat() {
         prefs()?.edit()?.remove(K_CHAT)?.apply()
     }
+
+    fun setUserName(name: String) {
+        prefs()?.edit()?.putString("user_name", name.trim())?.apply()
+    }
+
+    fun userName(): String = prefs()?.getString("user_name", "")?.orEmpty() ?: ""
+
+    fun rememberFact(key: String, value: String) {
+        prefs()?.edit()?.putString("fact_" + key.lowercase().trim(), value.trim())?.apply()
+    }
+
+    fun fact(key: String): String? = prefs()?.getString("fact_" + key.lowercase().trim(), null)
+
 }

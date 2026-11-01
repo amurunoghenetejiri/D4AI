@@ -142,6 +142,9 @@ object CommandParser {
         }
 
         // Time / date / storage / clipboard
+        Regex("""(?:my name is|call me|remember my name(?:\s+is)?)\s+([a-zA-Z ]{2,40})$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "set_user_name", it.groupValues[1].trim()))
+        }
         if (matchesAny(lower, "sleep", "go to sleep", "stop listening", "d4ai sleep", "sleep d4ai", "stop d4ai", "goodbye d4ai")) {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "sleep"))
         }

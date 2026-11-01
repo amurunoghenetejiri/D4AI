@@ -18,7 +18,42 @@ object AppTaskPlanner {
         val lower = text.lowercase()
         val steps = ArrayList<TaskStep>()
 
-        // WhatsApp message: send hi to john on whatsapp / message john hi on whatsapp
+        // Chain: enter/open WhatsApp … search … send …
+        if ((lower.contains("whatsapp") || lower.contains("whats app")) &&
+            (lower.contains("search") || lower.contains("send") || lower.contains("message") || lower.contains("enter"))
+        ) {
+            steps += TaskStep(StepType.OPEN_APP, "whatsapp")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.CLOSE_POPUP)
+
+            // search for X
+            Regex("""search(?:\s+for)?\s+([a-zA-Z0-9 _]+?)(?:\s+enter|\s+send|\s+open|$)""", RegexOption.IGNORE_CASE)
+                .find(text)?.let {
+                    val who = it.groupValues[1].trim()
+                    steps += TaskStep(StepType.TAP_TEXT, "Search")
+                    steps += TaskStep(StepType.WAIT, "500")
+                    steps += TaskStep(StepType.TYPE, who)
+                    steps += TaskStep(StepType.WAIT, "900")
+                    steps += TaskStep(StepType.TAP_TEXT, who)
+                    steps += TaskStep(StepType.WAIT, "800")
+                }
+
+            // send message body: "send dad good morning" or "send good morning"
+            Regex("""send(?:\s+(?:to\s+)?[a-zA-Z0-9 _]+)?\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+                var msg = it.groupValues[1].trim()
+                // strip trailing contact if duplicated
+                msg = msg.replace(Regex("""^(?:dad|daddy|mom|mum|mama)\s+""", RegexOption.IGNORE_CASE), "")
+                if (msg.isNotBlank()) {
+                    steps += TaskStep(StepType.TYPE, msg)
+                    steps += TaskStep(StepType.WAIT, "400")
+                    steps += TaskStep(StepType.TAP_TEXT, "Send")
+                    steps += TaskStep(StepType.SPEAK, "Sent.")
+                }
+            }
+            if (steps.size > 3) return steps
+        }
+
+        // send Hi to John on whatsapp
         Regex(
             """(?:send|message)\s+(.+?)\s+to\s+(.+?)(?:\s+on\s+whatsapp)?$""",
             RegexOption.IGNORE_CASE,
@@ -37,22 +72,22 @@ object AppTaskPlanner {
         }
 
         // YouTube play
-        Regex("""(?:youtube\s+)?(?:play|search)\s+(.+?)(?:\s+on\s+youtube)?$""", RegexOption.IGNORE_CASE)
-            .find(text)?.takeIf { lower.contains("youtube") || lower.startsWith("play") }?.let {
-                if (lower.contains("youtube") || lower.contains("play ")) {
-                    steps += TaskStep(StepType.OPEN_APP, "youtube")
-                    steps += TaskStep(StepType.WAIT, "1800")
-                    steps += TaskStep(StepType.TAP_TEXT, "Search")
-                    steps += TaskStep(StepType.TYPE, it.groupValues[1].trim())
-                    steps += TaskStep(StepType.PRESS_SEARCH)
-                    steps += TaskStep(StepType.WAIT, "1500")
-                    steps += TaskStep(StepType.PLAY_FIRST)
-                    steps += TaskStep(StepType.SPEAK, "Playing.")
-                    return steps
-                }
-            }
+        if (lower.contains("youtube") && (lower.contains("play") || lower.contains("search"))) {
+            val q = Regex("""(?:play|search)\s+(.+?)(?:\s+on\s+youtube)?$""", RegexOption.IGNORE_CASE)
+                .find(text)?.groupValues?.get(1)?.trim()
+                ?: text
+            steps += TaskStep(StepType.OPEN_APP, "youtube")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.WAIT, "1500")
+            steps += TaskStep(StepType.PLAY_FIRST)
+            steps += TaskStep(StepType.SPEAK, "Playing.")
+            return steps
+        }
 
-        // Shopping: open jumia search cheapest X add to cart
+        // Shopping jumia etc
         Regex(
             """(?:enter|open)\s+(\w+).*search(?:\s+for)?\s+(?:the\s+)?(?:cheapest\s+)?(.+?)(?:\s+add\s+to\s+cart)?$""",
             RegexOption.IGNORE_CASE,
@@ -75,7 +110,6 @@ object AppTaskPlanner {
             return steps
         }
 
-        // Chrome / search
         Regex("""(?:open\s+)?chrome.*search\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             steps += TaskStep(StepType.OPEN_APP, "chrome")
             steps += TaskStep(StepType.WAIT, "1200")
@@ -83,13 +117,7 @@ object AppTaskPlanner {
             steps += TaskStep(StepType.PRESS_SEARCH)
             return steps
         }
-        Regex("""(?:open\s+)?(?:google\s+and\s+)?search\s+(?:for\s+)?(.+)$""", RegexOption.IGNORE_CASE)
-            .find(text)?.let {
-                steps += TaskStep(StepType.WEB_SEARCH, it.groupValues[1].trim())
-                return steps
-            }
 
-        // Open app and read screen
         Regex("""^open\s+(.+?)(?:\s+and\s+read(?:\s+the)?\s+screen)?$""", RegexOption.IGNORE_CASE)
             .find(text)?.let {
                 steps += TaskStep(StepType.OPEN_APP, it.groupValues[1].trim())
@@ -98,8 +126,7 @@ object AppTaskPlanner {
                 return steps
             }
 
-        // Generic open X
-        Regex("""^(?:open|launch|start)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+        Regex("""^(?:open|launch|start|enter)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             steps += TaskStep(StepType.OPEN_APP, it.groupValues[1].trim())
             return steps
         }
