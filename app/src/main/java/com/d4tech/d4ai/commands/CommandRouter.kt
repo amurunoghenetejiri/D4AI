@@ -18,6 +18,9 @@ import android.provider.MediaStore
 import android.telecom.TelecomManager
 import com.d4tech.d4ai.ai.DeviceCommand
 import com.d4tech.d4ai.memory.MemoryStore
+import com.d4tech.d4ai.system.CommandParser
+import com.d4tech.d4ai.system.IntentKind
+import com.d4tech.d4ai.system.SystemControlManager
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
 import kotlin.math.roundToInt
 
@@ -38,6 +41,7 @@ class CommandRouter(private val context: Context) {
 
     private var pending: PendingAction? = null
     private var torchOn = false
+    private val sysCtrl = SystemControlManager(context)
 
     /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
@@ -56,6 +60,24 @@ class CommandRouter(private val context: Context) {
         val text = raw.trim()
         val lower = text.lowercase().trim()
         if (lower.isEmpty()) return RouteResult.NotCommand
+
+        // --- NLU: system brain (device vs knowledge) ---
+        // Skip when waiting for a confirmation answer
+        if (pending == null) {
+            val intents = CommandParser.parse(text)
+            if (intents.isNotEmpty()) {
+                val first = intents.first()
+                when (first.kind) {
+                    IntentKind.DEVICE_COMMAND -> {
+                        val parts = intents.filter { it.kind == IntentKind.DEVICE_COMMAND }
+                        val spoken = parts.joinToString(" ") { sysCtrl.execute(it.action, it.arg, it.arg2) }
+                        return RouteResult.Spoke(spoken)
+                    }
+                    IntentKind.KNOWLEDGE_QUERY -> return RouteResult.NotCommand
+                    IntentKind.CHAT -> { /* fall through to greetings below */ }
+                }
+            }
+        }
 
         // --- confirmations ---
         pending?.let { p ->
