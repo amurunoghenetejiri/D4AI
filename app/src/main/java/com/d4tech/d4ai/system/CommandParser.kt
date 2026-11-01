@@ -182,8 +182,20 @@ object CommandParser {
         if (matchesAny(lower, "home", "go home", "home screen")) {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "go_home"))
         }
+        if (lower.contains("stop screen record") || lower.contains("stop recording") || lower.contains("stop screen recording")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "screen_record_stop"))
+        }
+        if (lower.contains("screen record") || lower.contains("record my screen") || lower.contains("start recording screen") || lower.contains("record the screen")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "screen_record_start"))
+        }
         if (lower.contains("screenshot") || lower.contains("screen shot") || lower.contains("capture screen")) {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "screenshot"))
+        }
+        if (lower.contains("clear") && lower.contains("notification")) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "notifications_clear"))
+        }
+        if (lower.contains("notification") && (lower.contains("read") || lower.contains("what") || lower.contains("show"))) {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "notifications_read"))
         }
 
         // Open app

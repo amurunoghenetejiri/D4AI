@@ -466,6 +466,42 @@ class SystemControlManager(private val context: Context) {
         }
     }
 
+
+    fun startScreenRecord(): String {
+        return try {
+            MediaProjectionActivity.requestRecord(context)
+            "Confirm the screen capture permission. Recording will start after you allow it."
+        } catch (e: Exception) {
+            "Couldn't start screen record: ${e.message}"
+        }
+    }
+
+    fun stopScreenRecord(): String {
+        return try {
+            if (!ScreenRecordService.isRecording && ScreenRecordService.lastStatus.isBlank()) {
+                return "No active screen recording."
+            }
+            ScreenRecordService.stop(context)
+            val status = ScreenRecordService.lastStatus.ifBlank { "Stopped recording." }
+            status
+        } catch (e: Exception) {
+            "Couldn't stop recording: ${e.message}"
+        }
+    }
+
+    fun takeScreenshotCapture(): String {
+        return try {
+            MediaProjectionActivity.requestShot(context)
+            "Confirm screen capture permission for the screenshot."
+        } catch (e: Exception) {
+            "Couldn't start screenshot: ${e.message}"
+        }
+    }
+
+    fun readNotifications(n: Int = 5): String = D4AiNotificationListener.readLast(n)
+
+    fun clearNotifications(): String = D4AiNotificationListener.clearAll()
+
     fun execute(action: String, arg: String = "", arg2: String = ""): String {
         return when (action) {
             "battery_status" -> getBatteryPercent()
@@ -503,7 +539,11 @@ class SystemControlManager(private val context: Context) {
             "go_home" -> goHome()
             "open_app" -> openApp(arg)
             "web_search" -> webSearch(arg)
-            "screenshot" -> takeScreenshotHint()
+            "screenshot" -> takeScreenshotCapture()
+            "screen_record_start" -> startScreenRecord()
+            "screen_record_stop" -> stopScreenRecord()
+            "notifications_read" -> readNotifications()
+            "notifications_clear" -> clearNotifications()
             "find_phone" -> findMyPhoneRing()
             "open_settings" -> openSettingsPage(arg.ifBlank { "settings" })
             "routine_morning" -> Routines(context).goodMorning()
