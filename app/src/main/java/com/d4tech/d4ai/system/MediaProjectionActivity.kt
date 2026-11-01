@@ -57,7 +57,8 @@ class MediaProjectionActivity : Activity() {
                 Log.e(TAG, "start service", e2)
             }
         }
-        finish()
+        // Give the service a moment to call startForeground before we die
+        window.decorView.postDelayed({ finish() }, 300)
     }
 
     companion object {

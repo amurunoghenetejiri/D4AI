@@ -57,13 +57,13 @@ class CommandRouter(private val context: Context) {
                 MemoryStore.logCommand(raw.trim().take(180))
                 return RouteResult.Spoke(joined)
             }
-            // Media generation (image / video)
+            // Media generation (image / video) — broad natural language
             val low = raw.lowercase().trim()
-            if (low == "save image" || low == "save it" || low == "save the image") {
+            if (low == "save image" || low == "save it" || low == "save the image" || low == "save photo") {
                 val path = lastImagePath
                 val prompt = lastImagePrompt
-                if (path == null || prompt == null) {
-                    return RouteResult.Spoke("No recent image to save. Say generate image of … first.")
+                if (prompt == null) {
+                    return RouteResult.Spoke("No recent image. Say generate image of something first.")
                 }
                 return try {
                     val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = true) }
@@ -72,25 +72,46 @@ class CommandRouter(private val context: Context) {
                     RouteResult.Spoke("Save failed: ${e.message}")
                 }
             }
-            Regex("""(?:generate|create|draw|make)\s+(?:an?\s+)?(?:image|picture|photo)\s+(?:of\s+)?(.+)""", RegexOption.IGNORE_CASE).find(raw)?.let { m ->
-                val prompt = m.groupValues[1].trim()
+            fun extractImagePrompt(s: String): String? {
+                val l = s.lowercase()
+                val markers = listOf(
+                    "generate an image of", "generate image of", "create an image of", "create image of",
+                    "draw an image of", "draw a picture of", "draw me", "make an image of", "make a picture of",
+                    "generate a picture of", "create a picture of", "image of", "picture of",
+                    "generate image", "create image", "draw image", "make image",
+                )
+                for (m in markers) {
+                    val idx = l.indexOf(m)
+                    if (idx >= 0) {
+                        val rest = s.substring(idx + m.length).trim().trimStart(':', '-').trim()
+                        if (rest.isNotBlank()) return rest
+                        return s
+                    }
+                }
+                if (l.contains("generate") && (l.contains("image") || l.contains("picture") || l.contains("photo"))) {
+                    return s.replace(Regex("(?i)generate|an|a|image|picture|photo|of|please"), " ").replace(Regex("\s+"), " ").trim().ifBlank { s }
+                }
+                return null
+            }
+            extractImagePrompt(raw)?.let { prompt ->
                 return try {
                     val r = runBlocking { MediaGenerator.generateImage(context, prompt, save = false) }
                     if (r.ok) {
                         lastImagePath = r.filePath
                         lastImagePrompt = prompt
                         RouteResult.Spoke(
-                            "Image generated for: $prompt. Do you want me to save it to your gallery, or just keep the preview? Say save image or generate another.",
+                            "Image ready for: $prompt. Say save image to keep it in gallery, or ask for another image.",
                         )
                     } else RouteResult.Spoke(r.message)
                 } catch (e: Exception) {
                     RouteResult.Spoke("Image error: ${e.message}")
                 }
             }
-            Regex("""(?:generate|create|make)\s+(?:a\s+)?video\s+(?:of\s+)?(.+)""", RegexOption.IGNORE_CASE).find(raw)?.let { m ->
-                val prompt = m.groupValues[1].trim()
+            if (low.contains("generate") && low.contains("video") || low.contains("create") && low.contains("video") || low.contains("make") && low.contains("video")) {
+                val prompt = raw.replace(Regex("(?i)generate|create|make|a|an|video|of|please|for me"), " ")
+                    .replace(Regex("\s+"), " ").trim().ifBlank { "cinematic scene" }
                 return try {
-                    val r = runBlocking { MediaGenerator.generateVideoStub(context, prompt, save = false) }
+                    val r = runBlocking { MediaGenerator.generateVideo(context, prompt, save = false) }
                     lastImagePath = r.filePath
                     lastImagePrompt = prompt
                     RouteResult.Spoke(r.message)

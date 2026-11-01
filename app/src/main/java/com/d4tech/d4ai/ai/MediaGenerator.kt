@@ -2,7 +2,6 @@ package com.d4tech.d4ai.ai
 
 import android.content.ContentValues
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -15,15 +14,13 @@ import java.io.FileOutputStream
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-/**
- * Image gen via Pollinations flux (free). Video: multi-frame image fallback note
- * (full Wan 2.1 needs HF token + heavier pipeline).
- */
 object MediaGenerator {
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .connectTimeout(40, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
         .build()
 
     data class GenResult(
@@ -33,53 +30,78 @@ object MediaGenerator {
         val previewUrl: String? = null,
     )
 
-    /** Returns URL for flux image — caller can show or save. */
-    fun imageUrl(prompt: String): String {
+    private fun candidateUrls(prompt: String): List<String> {
         val q = URLEncoder.encode(prompt, "UTF-8")
-        return "https://image.pollinations.ai/prompt/$q?model=flux&width=1024&height=1024&nologo=true"
+        return listOf(
+            "https://image.pollinations.ai/prompt/$q?width=1024&height=1024&model=flux&nologo=true&enhance=true",
+            "https://image.pollinations.ai/prompt/$q?width=1024&height=1024&nologo=true",
+            "https://pollinations.ai/p/$q?width=1024&height=1024&nologo=true",
+        )
     }
 
     suspend fun generateImage(context: Context, prompt: String, save: Boolean): GenResult =
         withContext(Dispatchers.IO) {
-            try {
-                val url = imageUrl(prompt)
-                val req = Request.Builder().url(url).get().build()
-                http.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) {
-                        return@withContext GenResult(false, "Image API error ${res.code}")
+            var lastErr = "unknown"
+            for (url in candidateUrls(prompt)) {
+                try {
+                    val req = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "D4AI/1.0")
+                        .get()
+                        .build()
+                    http.newCall(req).execute().use { res ->
+                        if (!res.isSuccessful) {
+                            lastErr = "HTTP ${res.code}"
+                            return@use
+                        }
+                        val bytes = res.body?.bytes()
+                        if (bytes == null || bytes.size < 1000) {
+                            lastErr = "empty body"
+                            return@use
+                        }
+                        // basic jpeg/png magic
+                        val isImg = (bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) ||
+                            (bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte())
+                        if (!isImg) {
+                            lastErr = "not an image payload"
+                            return@use
+                        }
+                        if (!save) {
+                            val tmp = File(context.cacheDir, "d4ai_preview_${System.currentTimeMillis()}.jpg")
+                            FileOutputStream(tmp).use { it.write(bytes) }
+                            return@withContext GenResult(
+                                true,
+                                "Done. Image is ready. Say save image to put it in your gallery, or describe another image.",
+                                tmp.absolutePath,
+                                url,
+                            )
+                        }
+                        val path = saveJpegToGallery(context, bytes, prompt.take(40))
+                        return@withContext GenResult(true, "Saved to gallery ($path).", path, url)
                     }
-                    val bytes = res.body?.bytes() ?: return@withContext GenResult(false, "Empty image")
-                    if (!save) {
-                        // Cache temp for "show first"
-                        val tmp = File(context.cacheDir, "d4ai_preview_${System.currentTimeMillis()}.jpg")
-                        FileOutputStream(tmp).use { it.write(bytes) }
-                        return@withContext GenResult(
-                            true,
-                            "Image ready. Say save image to keep it in gallery, or generate again with a new prompt.",
-                            tmp.absolutePath,
-                            url,
-                        )
-                    }
-                    val path = saveJpegToGallery(context, bytes, prompt.take(40))
-                    GenResult(true, "Saved image to gallery: $path", path, url)
+                } catch (e: Exception) {
+                    lastErr = e.message ?: "error"
                 }
-            } catch (e: Exception) {
-                GenResult(false, "Image generation failed: ${e.message}")
             }
+            GenResult(false, "Image generation failed ($lastErr). Check internet and try a shorter prompt.")
         }
 
-    suspend fun generateVideoStub(context: Context, prompt: String, save: Boolean): GenResult =
+    suspend fun generateVideo(context: Context, prompt: String, save: Boolean): GenResult =
         withContext(Dispatchers.IO) {
-            // Without HF token / FFmpeg on device: generate a strong keyframe image and explain.
-            val img = generateImage(context, "$prompt, cinematic still frame, high detail", save)
-            if (!img.ok) return@withContext img
+            // Practical path: generate a strong cinematic still; full MP4 needs FFmpeg/HF on device.
+            val still = generateImage(
+                context,
+                "$prompt, cinematic film still, dramatic lighting, highly detailed, 4k frame",
+                save,
+            )
+            if (!still.ok) return@withContext still
             GenResult(
-                img.ok,
-                "Video models need extra setup on-device. I generated a cinematic keyframe for: $prompt. " +
-                    (img.message) +
-                    " Full Wan 2.1 video can be wired with a HuggingFace token later.",
-                img.filePath,
-                img.previewUrl,
+                true,
+                "Video pipeline: created a cinematic keyframe for \"$prompt\". " +
+                    still.message +
+                    " Full motion video can be added with a HuggingFace token; the image is ready now.",
+                still.filePath,
+                still.previewUrl,
             )
         }
 

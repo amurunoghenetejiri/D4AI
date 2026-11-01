@@ -1,6 +1,8 @@
 package com.d4tech.d4ai.system
 
 import com.d4tech.d4ai.screen.D4AiAccessibilityService
+import com.d4tech.d4ai.ai.MediaGenerator
+import kotlinx.coroutines.runBlocking
 import com.d4tech.d4ai.appcontrol.AppMemoryManager
 
 import android.app.NotificationManager
@@ -629,10 +631,24 @@ class SystemControlManager(private val context: Context) {
                 "Goodbye for now — I've got you whenever you're ready.",
                 "Sleep mode. Take care.",
             ).random()
-            "generate_image" -> "Generating image… please wait."
-            "generate_video" -> "Working on video… please wait."
-            "save_last_image" -> "Say generate image first, then save image."
-            "show_last_image" -> "Say generate image first."
+            "generate_image" -> {
+                try {
+                    val r = runBlocking { MediaGenerator.generateImage(context, arg.ifBlank { "abstract art" }, save = false) }
+                    r.message
+                } catch (e: Exception) {
+                    "Image failed: ${e.message}"
+                }
+            }
+            "generate_video" -> {
+                try {
+                    val r = runBlocking { MediaGenerator.generateVideo(context, arg.ifBlank { "cinematic scene" }, save = false) }
+                    r.message
+                } catch (e: Exception) {
+                    "Video failed: ${e.message}"
+                }
+            }
+            "save_last_image" -> "Say generate image of … first, then save image."
+            "show_last_image" -> "Image preview is in cache after generate image."
             "remember" -> {
                 AppMemoryManager(context).rememberStatement(arg.lowercase(), arg2)
                 "Okay, I'll remember ${arg} is ${arg2}."
