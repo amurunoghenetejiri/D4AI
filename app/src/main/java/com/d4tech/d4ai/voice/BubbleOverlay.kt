@@ -208,16 +208,16 @@ object BubbleOverlay {
 
             // listening pulse — ring expanding outward
             if (listening) {
-                val t = ((Math.sin(phase * 1.6) + 1.0) / 2.0)
+                val t = ((Math.sin(phase * 1.6) + 1.0) / 2.0).toFloat()
                 val r = base * (0.55f + t * 0.45f)
-                val alpha = ((1.0 - t) * 190).toInt()
+                val alpha = ((1f - t) * 190f).toInt().coerceIn(0, 255)
                 ringPaint.color = Color.argb(alpha, 34, 211, 238)
                 ringPaint.strokeWidth = 4f * density
                 canvas.drawCircle(cx, cy, r, ringPaint)
 
-                val t2 = ((Math.sin(phase * 1.6 + 1.9) + 1.0) / 2.0)
+                val t2 = ((Math.sin(phase * 1.6 + 1.9) + 1.0) / 2.0).toFloat()
                 val r2 = base * (0.55f + t2 * 0.45f)
-                ringPaint.color = Color.argb(((1.0 - t2) * 140).toInt(), 59, 130, 246)
+                ringPaint.color = Color.argb(((1f - t2) * 140f).toInt().coerceIn(0, 255), 59, 130, 246)
                 ringPaint.strokeWidth = 3f * density
                 canvas.drawCircle(cx, cy, r2, ringPaint)
             }
@@ -246,7 +246,7 @@ object BubbleOverlay {
             val gap = w / n
             paint.maskFilter = null
             for (i in 0 until n) {
-                val amp = ((Math.sin(phase * 5.0 + i * 1.4) + 1.0) / 2.0)
+                val amp = ((Math.sin(phase * 5.0 + i * 1.4) + 1.0) / 2.0).toFloat()
                 val bh = h * (0.25f + amp * 0.75f)
                 val x = i * gap + (gap - bw) / 2f
                 paint.color = if (i % 2 == 0) Color.parseColor("#22d3ee") else Color.parseColor("#c084fc")
