@@ -56,6 +56,11 @@ class MainActivity : AppCompatActivity() {
                     else eval("window.onD4AIStatus('')")
                 }
             },
+            onSpeakingChanged = { on ->
+                runOnUiThread {
+                    if (on) eval("window.onD4AIStatus('D4AI speaking…')")
+                }
+            },
         )
         speech.init { }
 
@@ -155,6 +160,7 @@ class MainActivity : AppCompatActivity() {
 
         private fun deliver(ok: Boolean, msg: String) {
             runOnUiThread {
+                eval("if(window.onD4AIReply)window.onD4AIReply($ok,${jsonString(msg)})")
                 eval("if(window._d4aiAskCb)window._d4aiAskCb($ok,${jsonString(msg)})")
             }
         }
@@ -210,6 +216,38 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
             } catch (_: Exception) {
             }
+        }
+
+        @JavascriptInterface
+        fun startListen() {
+            runOnUiThread {
+                ensurePerms()
+                speech.startListening()
+                eval("window.onD4AIStatus('D4AI listening…')")
+            }
+        }
+
+        @JavascriptInterface
+        fun setBackgroundListen(on: Boolean) {
+            runOnUiThread {
+                val i = Intent(this@MainActivity, D4AiListenService::class.java)
+                if (on) {
+                    i.action = D4AiListenService.ACTION_WAKE
+                    try {
+                        ContextCompat.startForegroundService(this@MainActivity, i)
+                    } catch (_: Exception) {
+                        startService(i)
+                    }
+                } else {
+                    i.action = D4AiListenService.ACTION_SLEEP
+                    startService(i)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun setAutoTalk(on: Boolean) {
+            // UI-side preference; speaking still controlled from web + speak()
         }
     }
 

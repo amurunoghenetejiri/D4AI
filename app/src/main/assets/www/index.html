@@ -5,200 +5,314 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <title>D4AI</title>
 <style>
-:root{
-  --bg:#050b18;--nav:#0a1628;--panel:#0d1f3c;--card:#0f2744;
-  --line:#1a3358;--accent:#3b82f6;--cyan:#22d3ee;--text:#e8eef8;--muted:#8ba3c7;
-  --user:#2563eb;--ok:#34d399;
-}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:radial-gradient(ellipse at 50% 0%,#0c1e3d 0%,var(--bg) 55%);color:var(--text);
-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+:root{
+  --bg:#050b18;--bg2:#0b1a3a;--card:#0f172a;--line:#1e293b;
+  --cyan:#22d3ee;--blue:#3b82f6;--text:#e2e8f0;--muted:#94a3b8;--user:#2563eb;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100%;max-width:560px;margin:0 auto;position:relative}
-header{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(8,16,32,.92);
-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:5;flex-shrink:0}
-header .logo{width:42px;height:42px;border-radius:50%;object-fit:cover;box-shadow:0 0 16px #3b82f655}
-header .meta{flex:1;min-width:0}
-header .meta h1{font-size:16px;font-weight:700;line-height:1.1}
-header .meta p{font-size:11px;color:var(--ok);margin-top:2px}
-header .meta p span{color:var(--muted)}
-.pill{border:none;border-radius:999px;padding:7px 12px;font-size:11px;font-weight:600;background:#0e7490;color:#fff}
-.icon-btn{background:0;border:0;color:var(--text);font-size:22px;padding:6px 8px;line-height:1}
-#status{display:none;text-align:center;font-size:12px;color:var(--cyan);padding:6px;background:#0a1a30;border-bottom:1px solid var(--line)}
-#main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-#welcome{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 18px 100px;text-align:center}
-.hero{width:150px;height:150px;border-radius:50%;object-fit:cover;
-animation:float 3s ease-in-out infinite;filter:drop-shadow(0 0 28px #3b82f688)}
-@keyframes float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.03)}}
-.ring{position:relative;margin-bottom:8px}
-.ring::after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid #3b82f633;animation:spin 8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#welcome h2{font-size:32px;font-weight:800;letter-spacing:.5px;margin-top:8px}
-.brand{font-size:11px;letter-spacing:.35em;color:var(--cyan);margin:4px 0}
-.motto{color:var(--muted);font-size:13px;margin-bottom:16px}
-.intro{background:linear-gradient(180deg,#102a4a,#0c2038);border:1px solid var(--line);border-radius:18px;
-padding:16px;text-align:left;font-size:14px;line-height:1.5;max-width:400px;width:100%;
-box-shadow:0 8px 32px #0006}
-#chat{display:none;flex-direction:column;gap:12px;padding:14px 12px 110px}
-.row{display:flex;gap:8px;align-items:flex-end;animation:in .25s ease}
-@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.row.user{flex-direction:row-reverse}
-.row .av{width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0}
-.bubble{max-width:82%;padding:11px 14px;border-radius:18px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
-.row.ai .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:5px}
-.row.user .bubble{background:linear-gradient(135deg,#1d4ed8,#2563eb);border-bottom-right-radius:5px}
-.actions{display:flex;gap:10px;padding:2px 8px 0;opacity:.55;font-size:14px}
-footer{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;
-padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,#07101e 30%);
-border-top:1px solid var(--line)}
-footer .attach,footer .mic,footer .fab{width:42px;height:42px;border-radius:50%;border:0;display:grid;place-items:center;font-size:18px}
-footer .attach{background:transparent;color:var(--muted);font-size:20px}
-footer .mic{background:#132844;color:#fff}
-footer .mic.on{background:#dc2626;box-shadow:0 0 0 4px #dc262633}
-footer input{flex:1;height:44px;border-radius:999px;border:1px solid var(--line);background:#0b1a33;color:var(--text);
-padding:0 16px;font-size:14px;outline:none}
-footer .fab{background:linear-gradient(135deg,#1d4ed8,#06b6d4);padding:0;overflow:hidden}
-footer .fab img{width:42px;height:42px;object-fit:cover}
-#drawer{position:fixed;inset:0;background:#0009;display:none;z-index:30}
-#drawer.open{display:block}
-#drawer .panel{width:min(86vw,340px);height:100%;background:#070f1c;padding:14px 14px 40px;overflow-y:auto;
-border-right:1px solid var(--line);animation:slide .2s ease}
-@keyframes slide{from{transform:translateX(-12px);opacity:.6}to{transform:none;opacity:1}}
-#drawer .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-#drawer .new{width:100%;border:0;border-radius:14px;padding:14px;background:var(--accent);color:#fff;font-weight:700;font-size:15px;margin-bottom:10px}
-#drawer .item{display:flex;align-items:center;gap:12px;padding:13px 6px;border-bottom:1px solid #12233f;font-size:15px}
-#drawer .sec{color:var(--muted);font-size:11px;letter-spacing:.12em;margin:16px 0 6px}
-.typing{display:inline-flex;gap:4px;padding:4px 0}
-.typing i{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:b 1s infinite}
-.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
-@keyframes b{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+
+/* Header */
+.hdr{display:flex;align-items:center;gap:10px;padding:10px 12px;background:linear-gradient(180deg,#0b1a3a 0%,#050b18 100%);border-bottom:1px solid #1e293b;z-index:20}
+.hdr .logo{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#67e8f9,#3b82f6 50%,#7c3aed);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(59,130,246,.45);position:relative}
+.hdr .logo::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid rgba(103,232,249,.35);animation:ring 2s ease-out infinite}
+@keyframes ring{0%{transform:scale(.9);opacity:.8}100%{transform:scale(1.25);opacity:0}}
+.hdr .meta{flex:1;min-width:0}
+.hdr .meta h1{font-size:16px;font-weight:700;letter-spacing:.02em}
+.hdr .meta p{font-size:11px;color:var(--cyan);display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e}
+.auto{border:none;border-radius:999px;padding:8px 14px;font-size:12px;font-weight:600;background:linear-gradient(90deg,#06b6d4,#3b82f6);color:#fff}
+.auto.off{background:#1e293b;color:var(--muted)}
+.iconbtn{width:36px;height:36px;border:none;border-radius:10px;background:transparent;color:var(--muted);font-size:18px}
+
+/* Menu sheet */
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
+.sheet-bg.show{display:block}
+.sheet{position:fixed;top:0;right:0;width:min(300px,86vw);height:100%;background:#0b1224;border-left:1px solid #1e293b;z-index:41;transform:translateX(100%);transition:transform .22s ease;padding:20px 16px}
+.sheet.open{transform:translateX(0)}
+.sheet h3{font-size:14px;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.08em}
+.sheet button{width:100%;text-align:left;padding:12px 12px;border:none;border-radius:12px;background:transparent;color:var(--text);font-size:15px;margin-bottom:4px}
+.sheet button:active{background:#1e293b}
+.sheet .row{display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:12px;background:#111827;margin-bottom:8px}
+.sheet .sw{width:44px;height:26px;border-radius:999px;background:#334155;position:relative}
+.sheet .sw.on{background:#3b82f6}
+.sheet .sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s}
+.sheet .sw.on i{left:21px}
+
+/* Chat area */
+.chat{flex:1;overflow-y:auto;padding:16px 14px 12px;-webkit-overflow-scrolling:touch}
+.hero{text-align:center;padding:28px 12px 18px}
+.hero-orb{width:88px;height:88px;margin:0 auto 14px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#a5f3fc,#3b82f6 45%,#6d28d9);box-shadow:0 0 40px rgba(59,130,246,.35);position:relative;animation:orb 3s ease-in-out infinite}
+@keyframes orb{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.hero-orb .mouth{position:absolute;left:50%;bottom:28%;width:22px;height:8px;margin-left:-11px;border-radius:0 0 12px 12px;background:#0b1a3a;opacity:.85}
+.hero-orb.talk .mouth{animation:mouth .28s ease-in-out infinite alternate;height:12px}
+@keyframes mouth{from{height:6px}to{height:14px}}
+.hero h2{font-size:15px;font-weight:600;background:linear-gradient(90deg,#67e8f9,#3b82f6,#c084fc);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45}
+
+.msg{display:flex;gap:8px;margin:10px 0;max-width:100%;align-items:flex-end}
+.msg.user{flex-direction:row-reverse}
+.av{width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#67e8f9,#3b82f6);flex-shrink:0}
+.bubble{max-width:78%;padding:10px 14px;border-radius:16px;font-size:15px;line-height:1.45;word-break:break-word;white-space:pre-wrap}
+.msg.assistant .bubble{background:#111827;border:1px solid #1e293b;border-bottom-left-radius:6px}
+.msg.user .bubble{background:linear-gradient(135deg,#2563eb,#1d4ed8);border-bottom-right-radius:6px}
+.actions{display:flex;gap:4px;margin-top:4px;padding-left:36px}
+.actions button{border:none;background:transparent;color:var(--muted);padding:4px 6px;font-size:14px;border-radius:8px}
+.actions button:active{background:#1e293b;color:var(--cyan)}
+.typing{display:none;padding:8px 36px;color:var(--muted);font-size:13px}
+.typing.on{display:flex;align-items:center;gap:8px}
+.typing .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--cyan);margin:0 2px;animation:bounce 1s infinite}
+.typing .dots span:nth-child(2){animation-delay:.15s}
+.typing .dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
+
+/* Composer */
+.composer{display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:#0b1224;border-top:1px solid #1e293b}
+.composer input{flex:1;border:1px solid #1e293b;background:#0f172a;color:var(--text);border-radius:999px;padding:12px 16px;font-size:15px;outline:none}
+.composer input:focus{border-color:#3b82f6}
+.composer .round{width:42px;height:42px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;font-size:18px}
+.composer .mic{background:#1e293b;color:#fff}
+.composer .send{background:linear-gradient(135deg,#3b82f6,#06b6d4);color:#fff}
+.composer .robot{background:radial-gradient(circle at 30% 30%,#67e8f9,#3b82f6);box-shadow:0 0 12px rgba(59,130,246,.4)}
+
+/* History panel */
+.hist{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:35;display:none}
+.hist.show{display:block}
+.hist-panel{position:absolute;left:0;top:0;bottom:0;width:min(320px,88vw);background:#0b1224;padding:16px;overflow-y:auto}
+.hist-panel h2{font-size:16px;margin-bottom:12px}
+.hist-item{padding:12px;border-radius:12px;background:#111827;margin-bottom:8px;border:1px solid #1e293b}
+.hist-item small{color:var(--muted);font-size:11px}
+
+.status{position:absolute;left:50%;transform:translateX(-50%);bottom:78px;background:#1e293b;color:var(--cyan);font-size:12px;padding:6px 12px;border-radius:999px;display:none;z-index:15}
+.status.on{display:block}
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <img class="logo" src="file:///android_asset/d4ai_logo.png" alt="D4AI"/>
+  <header class="hdr">
+    <div class="logo" id="hdrLogo">🤖</div>
     <div class="meta">
       <h1>D4AI</h1>
-      <p>● Online <span>· v5-Ultimate</span></p>
+      <p><span class="dot"></span> Online · v5-Ultimate</p>
     </div>
-    <button class="pill" id="btnAuto" type="button">Auto-talk On</button>
-    <button class="icon-btn" id="btnMenu" type="button" aria-label="Menu">☰</button>
+    <button class="auto" id="autoBtn" type="button">Auto-talk On</button>
+    <button class="iconbtn" id="menuBtn" type="button" aria-label="Menu">☰</button>
   </header>
-  <div id="status"></div>
-  <div id="main">
-    <div id="welcome">
-      <div class="ring"><img class="hero" src="file:///android_asset/d4ai_logo.png" alt=""/></div>
-      <h2>D4AI</h2>
-      <div class="brand">D 4 T E C H</div>
-      <div class="motto">Creating Solutions. Innovating Lives.</div>
-      <div class="intro">
-        Hey! 👋 I'm <b>D4AI</b> — your AI buddy.<br/><br/>
-        I'm here anytime you need help: study, code, ideas, phone commands, or just figuring something out. Talk to me like a friend.<br/><br/>
-        Introduce yourself and ask me anything — what's on your mind?
-      </div>
-    </div>
-    <div id="chat"></div>
-  </div>
-  <footer>
-    <button class="attach" id="btnAttach" type="button" title="Attach">📎</button>
-    <button class="mic" id="btnMic" type="button" title="Voice">🎤</button>
-    <input id="input" placeholder="Message D4AI..." autocomplete="off" enterkeyhint="send"/>
-    <button class="fab" id="btnSend" type="button" title="Send"><img src="file:///android_asset/d4ai_logo.png" alt="send"/></button>
-  </footer>
-</div>
-<div id="drawer">
-  <div class="panel">
-    <div class="head">
-      <img src="file:///android_asset/d4ai_logo.png" width="40" height="40" style="border-radius:50%"/>
-      <div style="flex:1">
-        <div style="font-weight:700">D4AI</div>
-        <div style="font-size:11px;color:var(--ok)">● Online · v5-Ultimate</div>
-      </div>
-      <button class="icon-btn" id="btnClose" type="button">✕</button>
-    </div>
-    <button class="new" id="btnNew" type="button">＋  New Chat</button>
-    <div class="item" data-act="history">🕐  Chat History</div>
-    <div class="item" data-act="tools">🔧  Tools &amp; Integrations</div>
-    <div class="item" data-act="voice">📞  Voice &amp; Call</div>
-    <div class="item" data-act="settings">⚙️  Settings</div>
-    <div class="item" data-act="about">ℹ  About D4AI</div>
-    <div class="item" data-act="apikey">🔑  AI API key (unlimited)</div>
-    <div class="sec">QUICK ACTIONS</div>
-    <div class="item" data-act="clear">🗑  Clear Chat</div>
-    <div class="item" data-act="theme">🌙  Dark Mode</div>
-    <div class="item" data-act="wake">▶  Wake D4AI</div>
-    <div class="item" data-act="sleep">⏸  Sleep D4AI</div>
-    <div class="item" data-act="assist">🎙  Set as assistant</div>
-    <div class="item" data-act="exit">↗  Exit</div>
-    <div style="margin-top:24px;text-align:center;font-size:11px;color:var(--muted)">D4AI · Creating Solutions. Innovating Lives.</div>
-  </div>
-</div>
-<script>
-const $ = (id)=>document.getElementById(id);
-const chat=$('chat'), welcome=$('welcome'), input=$('input'), status=$('status'), mic=$('btnMic');
-let autoTalk=true, busy=false;
 
-function setStatus(msg){ if(!msg){status.style.display='none';status.textContent='';return;} status.style.display='block';status.textContent=msg; }
-function showChat(){ welcome.style.display='none'; chat.style.display='flex'; }
-function addBubble(role, text, typing){
-  showChat();
-  const row=document.createElement('div'); row.className='row '+(role==='user'?'user':'ai');
-  if(role!=='user'){ const img=document.createElement('img'); img.className='av'; img.src='file:///android_asset/d4ai_logo.png'; row.appendChild(img); }
-  const b=document.createElement('div'); b.className='bubble';
-  if(typing){ b.innerHTML='<span class="typing"><i></i><i></i><i></i></span>'; }
-  else b.textContent=text;
-  row.appendChild(b); chat.appendChild(row);
-  $('main').scrollTop=$('main').scrollHeight;
-  return b;
-}
-async function sendText(text){
-  text=(text||'').trim(); if(!text||busy) return;
-  busy=true; addBubble('user', text); input.value='';
-  const bubble=addBubble('ai','',true);
-  try{
-    let answer;
-    if(window.D4AI&&window.D4AI.ask){
-      answer=await new Promise((resolve,reject)=>{
-        window._d4aiAskCb=(ok,msg)=>ok?resolve(msg):reject(new Error(msg));
-        window.D4AI.ask(text);
-      });
-    } else answer='D4AI native bridge not ready. Rebuild/reinstall the app.';
-    bubble.textContent=answer;
-    if(autoTalk&&window.D4AI&&window.D4AI.speak) window.D4AI.speak(answer);
-  }catch(e){ bubble.textContent=e.message||'Something went wrong.'; }
-  busy=false; $('main').scrollTop=$('main').scrollHeight;
-}
-$('btnSend').onclick=()=>sendText(input.value);
-input.addEventListener('keydown',e=>{ if(e.key==='Enter') sendText(input.value); });
-$('btnAuto').onclick=function(){ autoTalk=!autoTalk; this.textContent=autoTalk?'Auto-talk On':'Auto-talk'; };
-mic.onclick=()=>{
-  if(!(window.D4AI&&window.D4AI.listen)) return;
-  mic.classList.add('on'); setStatus('D4AI listening…');
-  window.D4AI.listen();
-};
-window.onD4AIHeard=(t)=>{ mic.classList.remove('on'); setStatus(''); if(t) sendText(t); };
-window.onD4AIStatus=(m)=>{ setStatus(m||''); if(m&&/listen/i.test(m)) mic.classList.add('on'); else mic.classList.remove('on'); };
-const drawer=$('drawer');
-$('btnMenu').onclick=()=>drawer.classList.add('open');
-$('btnClose').onclick=()=>drawer.classList.remove('open');
-drawer.onclick=e=>{ if(e.target===drawer) drawer.classList.remove('open'); };
-function resetChat(){ chat.innerHTML=''; chat.style.display='none'; welcome.style.display='flex'; drawer.classList.remove('open'); }
-$('btnNew').onclick=resetChat;
-document.querySelectorAll('#drawer .item').forEach(el=>{
-  el.onclick=()=>{
-    const a=el.getAttribute('data-act'); drawer.classList.remove('open');
-    if(a==='clear'||a==='history') resetChat();
-    if(a==='wake'&&window.D4AI) window.D4AI.wake();
-    if(a==='sleep'&&window.D4AI) window.D4AI.sleep();
-    if(a==='assist'&&window.D4AI) window.D4AI.openAssistSettings();
-    if(a==='voice'){ mic.classList.add('on'); setStatus('D4AI listening…'); if(window.D4AI) window.D4AI.listen(); }
-    if(a==='apikey'){ const k=prompt('Paste Pollinations sk_ key from enter.pollinations.ai (optional, for unlimited):',''); if(k!==null && window.D4AI && window.D4AI.setApiKey) window.D4AI.setApiKey(k); addBubble('ai', k ? 'API key saved. Replies should be unlimited.' : 'Key cleared. Using free public endpoints.'); }
-    if(a==='about') addBubble('ai',"I'm D4AI by D4TECH — Creating Solutions, Innovating Lives.\nCreator: Amurun Destiny O.");
-    if(a==='tools') addBubble('ai','Tools: open apps, call, volume, brightness, flashlight, mute — try “open WhatsApp” or “volume up”.');
-    if(a==='settings') addBubble('ai','Use Auto-talk in the header. Set D4AI as assistant in system settings for Home long-press.');
-    if(a==='exit'&&window.D4AI&&window.D4AI.sleep) window.D4AI.sleep();
+  <div class="chat" id="chat">
+    <div class="hero" id="hero">
+      <div class="hero-orb" id="heroOrb"><div class="mouth"></div></div>
+      <h2 id="welcomeTitle">Hi — I'm D4AI</h2>
+      <p>Your personal assistant by D4 Tech.<br/>Creating Solutions, Innovating Lives.</p>
+    </div>
+  </div>
+  <div class="typing" id="typing"><div class="dots"><span></span><span></span><span></span></div> D4AI is writing…</div>
+  <div class="status" id="status"></div>
+
+  <div class="composer">
+    <button class="round mic" id="attachBtn" type="button">📎</button>
+    <button class="round mic" id="micBtn" type="button">🎤</button>
+    <input id="input" type="text" placeholder="Message D4AI…" autocomplete="off"/>
+    <button class="round send" id="sendBtn" type="button">➤</button>
+    <button class="round robot" id="callBtn" type="button" title="Voice">🤖</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="sheetBg"></div>
+<aside class="sheet" id="sheet">
+  <h2 style="font-size:18px;margin-bottom:8px">D4AI Menu</h2>
+  <button type="button" id="newChatBtn">＋ New chat</button>
+  <button type="button" id="historyBtn">⏱ Chat history</button>
+  <h3>Listening</h3>
+  <div class="row">
+    <span>Background listening</span>
+    <div class="sw on" id="bgListenSw"><i></i></div>
+  </div>
+  <button type="button" id="sleepBtn">😴 Sleep D4AI</button>
+  <h3>About</h3>
+  <button type="button" id="aboutBtn">D4AI by D4 Tech</button>
+</aside>
+
+<div class="hist" id="hist">
+  <div class="hist-panel">
+    <h2>Chat history</h2>
+    <div id="histList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const chat=document.getElementById('chat');
+  const input=document.getElementById('input');
+  const typing=document.getElementById('typing');
+  const statusEl=document.getElementById('status');
+  const hero=document.getElementById('hero');
+  const heroOrb=document.getElementById('heroOrb');
+  const autoBtn=document.getElementById('autoBtn');
+  let autoTalk=true;
+  let chats=JSON.parse(localStorage.getItem('d4ai_chats')||'[]');
+  let currentId=localStorage.getItem('d4ai_current')||null;
+  let messages=[];
+
+  function uid(){return 'm'+Date.now()+Math.random().toString(36).slice(2,7)}
+  function save(){
+    if(!currentId){
+      currentId=uid();
+      chats.unshift({id:currentId,title:'New chat',ts:Date.now(),messages:[]});
+    }
+    const c=chats.find(x=>x.id===currentId);
+    if(c){c.messages=messages;c.title=(messages.find(m=>m.role==='user')||{}).content||'New chat';c.title=String(c.title).slice(0,40);c.ts=Date.now()}
+    localStorage.setItem('d4ai_chats',JSON.stringify(chats.slice(0,40)));
+    localStorage.setItem('d4ai_current',currentId||'');
+  }
+  function loadCurrent(){
+    if(currentId){
+      const c=chats.find(x=>x.id===currentId);
+      if(c) messages=c.messages||[];
+    }
+    render();
+  }
+  function render(){
+    const keepHero=messages.length===0;
+    chat.innerHTML='';
+    if(keepHero){
+      chat.appendChild(hero);
+      hero.style.display='block';
+    } else {
+      hero.style.display='none';
+    }
+    messages.forEach(m=>appendBubble(m,false));
+    chat.scrollTop=chat.scrollHeight;
+  }
+  function appendBubble(m,scroll){
+    if(hero && messages.length>0) hero.style.display='none';
+    const row=document.createElement('div');
+    row.className='msg '+m.role;
+    row.dataset.id=m.id;
+    if(m.role==='assistant'){
+      row.innerHTML='<div class="av"></div><div><div class="bubble"></div><div class="actions">'+
+        '<button type="button" data-a="speak" title="Speak">🔊</button>'+
+        '<button type="button" data-a="copy" title="Copy">📋</button>'+
+        '<button type="button" data-a="resend" title="Resend">↺</button></div></div>';
+      row.querySelector('.bubble').textContent=m.content;
+    } else {
+      row.innerHTML='<div class="bubble"></div>';
+      row.querySelector('.bubble').textContent=m.content;
+    }
+    chat.appendChild(row);
+    if(scroll!==false) chat.scrollTop=chat.scrollHeight;
+  }
+
+  function setTyping(on){typing.classList.toggle('on',!!on)}
+  function setStatus(t){statusEl.textContent=t||'';statusEl.classList.toggle('on',!!t)}
+  function setTalking(on){heroOrb.classList.toggle('talk',!!on);document.getElementById('hdrLogo').style.transform=on?'scale(1.06)':'scale(1)'}
+
+  function deliverReply(ok, text){
+    setTyping(false);
+    setTalking(false);
+    const m={id:uid(),role:'assistant',content:text||'(empty)'};
+    messages.push(m);
+    appendBubble(m,true);
+    save();
+    if(autoTalk && window.D4AI && D4AI.speak){
+      try{ setTalking(true); D4AI.speak(text); }catch(e){}
+      setTimeout(()=>setTalking(false), Math.min(12000, 800+String(text).length*40));
+    }
+  }
+
+  function send(text){
+    text=(text||'').trim();
+    if(!text) return;
+    const m={id:uid(),role:'user',content:text};
+    messages.push(m);
+    appendBubble(m,true);
+    save();
+    setTyping(true);
+    setTalking(false);
+    if(window.D4AI && D4AI.ask){
+      try{ D4AI.ask(text); }catch(e){ deliverReply(false,'Could not reach D4AI.'); }
+    } else {
+      setTimeout(()=>deliverReply(true,'D4AI bridge not connected. Rebuild the Android app.'),600);
+    }
+  }
+
+  // Bridges from Android
+  window.onD4AIReply=function(ok, text){ deliverReply(!!ok, text||''); };
+  window.onD4AIHeard=function(t){ if(t){ input.value=t; send(t);} };
+  window.onD4AIStatus=function(t){ setStatus(t); setTalking(!!t && /speak|talk|listen/i.test(t)); };
+  window.onD4AIPartial=function(t){ if(t) input.value=t; };
+
+  document.getElementById('sendBtn').onclick=()=>{send(input.value);input.value='';};
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ send(input.value); input.value=''; }});
+  autoBtn.onclick=()=>{
+    autoTalk=!autoTalk;
+    autoBtn.textContent=autoTalk?'Auto-talk On':'Auto-talk';
+    autoBtn.classList.toggle('off',!autoTalk);
+    try{ if(D4AI.setAutoTalk) D4AI.setAutoTalk(autoTalk); }catch(e){}
   };
-});
+  document.getElementById('micBtn').onclick=()=>{
+    try{ if(D4AI.startListen) D4AI.startListen(); setStatus('Listening…'); }catch(e){}
+  };
+  document.getElementById('callBtn').onclick=()=>{
+    try{ if(D4AI.startListen) D4AI.startListen(); setStatus('D4AI listening…'); setTalking(true);}catch(e){}
+  };
+
+  // Menu
+  const sheet=document.getElementById('sheet');
+  const sheetBg=document.getElementById('sheetBg');
+  function openSheet(on){ sheet.classList.toggle('open',on); sheetBg.classList.toggle('show',on); }
+  document.getElementById('menuBtn').onclick=()=>openSheet(true);
+  sheetBg.onclick=()=>openSheet(false);
+  document.getElementById('newChatBtn').onclick=()=>{
+    currentId=null; messages=[]; save(); currentId=localStorage.getItem('d4ai_current');
+    currentId=uid(); chats.unshift({id:currentId,title:'New chat',ts:Date.now(),messages:[]});
+    localStorage.setItem('d4ai_current',currentId); messages=[]; render(); openSheet(false);
+  };
+  document.getElementById('historyBtn').onclick=()=>{
+    openSheet(false);
+    const list=document.getElementById('histList');
+    list.innerHTML='';
+    chats.forEach(c=>{
+      const d=document.createElement('div');
+      d.className='hist-item';
+      d.innerHTML='<div>'+(c.title||'Chat')+'</div><small>'+new Date(c.ts||0).toLocaleString()+'</small>';
+      d.onclick=()=>{ currentId=c.id; localStorage.setItem('d4ai_current',currentId); messages=c.messages||[]; render(); document.getElementById('hist').classList.remove('show'); };
+      list.appendChild(d);
+    });
+    document.getElementById('hist').classList.add('show');
+  };
+  document.getElementById('hist').onclick=e=>{ if(e.target.id==='hist') e.currentTarget.classList.remove('show'); };
+  document.getElementById('sleepBtn').onclick=()=>{
+    openSheet(false);
+    try{ if(D4AI.sleep) D4AI.sleep(); }catch(e){}
+    deliverReply(true,'Going to sleep. Say D4AI or hold Home to wake me.');
+  };
+  let bgOn=true;
+  document.getElementById('bgListenSw').onclick=function(){
+    bgOn=!bgOn; this.classList.toggle('on',bgOn);
+    try{ if(D4AI.setBackgroundListen) D4AI.setBackgroundListen(bgOn); }catch(e){}
+  };
+  document.getElementById('aboutBtn').onclick=()=>{ openSheet(false); deliverReply(true,'I am D4AI by D4 Tech — Creating Solutions, Innovating Lives.'); };
+
+  chat.addEventListener('click',e=>{
+    const btn=e.target.closest('button[data-a]');
+    if(!btn) return;
+    const row=btn.closest('.msg');
+    const id=row && row.dataset.id;
+    const m=messages.find(x=>x.id===id);
+    if(!m) return;
+    if(btn.dataset.a==='copy'){ try{ navigator.clipboard.writeText(m.content); setStatus('Copied'); setTimeout(()=>setStatus(''),800);}catch(e){} }
+    if(btn.dataset.a==='speak'){ try{ setTalking(true); D4AI.speak(m.content); setTimeout(()=>setTalking(false),2000);}catch(e){} }
+    if(btn.dataset.a==='resend'){
+      // resend previous user message before this assistant msg
+      const idx=messages.indexOf(m);
+      for(let i=idx-1;i>=0;i--){ if(messages[i].role==='user'){ send(messages[i].content); break; } }
+    }
+  });
+
+  loadCurrent();
+})();
 </script>
 </body>
 </html>
