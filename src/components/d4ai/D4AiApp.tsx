@@ -2285,6 +2285,43 @@ function D4AiPage() {
     </div>
   );
 
+  const commandsView = (
+    <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div className="mx-auto mb-3 max-w-md rounded-2xl bg-gradient-to-r from-cyan-500/15 via-blue-500/10 to-fuchsia-500/15 p-4 text-center ring-1 ring-cyan-400/25">
+        <p className="text-sm font-bold text-white">Everything D4AI can do on your phone</p>
+        <p className="mt-1 text-[11px] text-cyan-200/80">
+          Commands run on your device — phone control works offline. Tap any command to try it in chat.
+        </p>
+      </div>
+      <div className="mx-auto max-w-md space-y-3 pb-6">
+        {COMMAND_GROUPS.map((g) => (
+          <div key={g.title} className={cn("rounded-2xl p-3.5", dark ? "bg-[#0e2038] ring-1 ring-cyan-400/15" : "bg-white ring-1 ring-slate-200 shadow-sm")}>
+            <p className={cn("mb-2 flex items-center gap-2 text-sm font-bold", dark ? "text-white" : "text-slate-900")}>
+              <span aria-hidden>{g.emoji}</span>
+              {g.title}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {g.examples.map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => {
+                    setInput(ex.replace(/ — .*$/, ""));
+                    setTab("chat");
+                  }}
+                  className="rounded-full bg-cyan-500/10 px-3 py-1.5 text-left text-[11px] leading-snug text-cyan-100 ring-1 ring-cyan-400/25 transition hover:bg-cyan-500/20 hover:ring-cyan-400/45"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div ref={bottomRef} />
+    </div>
+  );
+
   const composer = (
     <div
       className={cn("shrink-0 border-t px-2 py-2", dark ? "border-cyan-400/15 bg-[#081426]" : "border-slate-200 bg-white")}
