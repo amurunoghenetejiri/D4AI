@@ -110,11 +110,45 @@ object AppTaskPlanner {
             return steps
         }
 
-        Regex("""(?:open\s+)?chrome.*search\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+        // Chrome / browser search (many phrasings)
+        Regex(
+            """(?:(?:open|enter|launch)\s+)?(?:google\s+)?(?:chrome|browser).*?(?:search(?:\s+for)?|look\s+up|google)\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
             steps += TaskStep(StepType.OPEN_APP, "chrome")
-            steps += TaskStep(StepType.WAIT, "1200")
-            steps += TaskStep(StepType.TYPE, it.groupValues[1].trim())
+            steps += TaskStep(StepType.WAIT, "1600")
+            steps += TaskStep(StepType.TAP_TEXT, "Search or type URL")
+            steps += TaskStep(StepType.WAIT, "400")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "300")
+            steps += TaskStep(StepType.TYPE, q)
             steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.SPEAK, "Searching for $q.")
+            return steps
+        }
+        Regex("""(?:search(?:\s+for)?|google|look\s+up)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            if (lower.contains("whatsapp") || lower.contains("youtube") || lower.contains("jumia")) null
+            else {
+                val q = it.groupValues[1].trim()
+                steps += TaskStep(StepType.OPEN_APP, "chrome")
+                steps += TaskStep(StepType.WAIT, "1500")
+                steps += TaskStep(StepType.TYPE, q)
+                steps += TaskStep(StepType.PRESS_SEARCH)
+                steps += TaskStep(StepType.SPEAK, "Searching for $q.")
+                return steps
+            }
+        }
+        // Standalone type / tap on whatever is focused
+        Regex("""^(?:type|write)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            steps += TaskStep(StepType.TYPE, it.groupValues[1].trim())
+            if (lower.contains("send")) {
+                steps += TaskStep(StepType.TAP_TEXT, "Send")
+            }
+            return steps
+        }
+        Regex("""^(?:tap|click|press)\s+(?:on\s+)?(?:the\s+)?(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            steps += TaskStep(StepType.TAP_TEXT, it.groupValues[1].trim())
             return steps
         }
 

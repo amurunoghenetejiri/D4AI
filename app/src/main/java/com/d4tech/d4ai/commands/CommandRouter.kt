@@ -161,6 +161,31 @@ class CommandRouter(private val context: Context) {
         val lower = text.lowercase().trim()
         if (lower.isEmpty()) return RouteResult.NotCommand
 
+        // --- device / app awareness ---
+        if (matchesAny(lower, "which app am i in", "what app am i in", "what app is this", "current app", "which app is open")) {
+            return RouteResult.Spoke(describeCurrentApp())
+        }
+        if (matchesAny(lower, "list all apps", "list my apps", "show all apps", "apps on my phone", "what apps do i have")) {
+            return RouteResult.Spoke(listInstalledAppsBrief())
+        }
+        if (lower.startsWith("about app ") || lower.startsWith("info about ") || lower.contains("tell me about the app") || lower.contains("information about")) {
+            val name = lower
+                .replace("tell me about the app", "")
+                .replace("information about", "")
+                .replace("about app", "")
+                .replace("info about", "")
+                .replace("the app", "")
+                .trim()
+            if (name.isNotBlank()) return RouteResult.Spoke(describeInstalledApp(name))
+        }
+        // generic type / tap / click / press on current screen
+        Regex("""^(?:type|enter text|write)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(typeOnScreen(it.groupValues[1].trim()))
+        }
+        Regex("""^(?:tap|click|press|hit)\s+(?:on\s+)?(?:the\s+)?(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return RouteResult.Spoke(tapOnScreen(it.groupValues[1].trim()))
+        }
+
         // --- NLU: system brain (device vs knowledge) ---
         // Skip when waiting for a confirmation answer
         if (pending == null) {
@@ -441,6 +466,21 @@ class CommandRouter(private val context: Context) {
             val n = it.groupValues[1].toInt().coerceIn(0, 100)
             setVolume(n / 100f)
             return RouteResult.Spoke("Volume set to $n percent.")
+        }
+
+
+        if ("volume" in lower) {
+            val wordPct = mapOf(
+                "zero" to 0, "ten" to 10, "twenty" to 20, "thirty" to 30, "forty" to 40,
+                "fifty" to 50, "half" to 50, "sixty" to 60, "seventy" to 70,
+                "eighty" to 80, "ninety" to 90, "hundred" to 100, "full" to 100,
+            )
+            for ((w, n) in wordPct) {
+                if (w in lower) {
+                    setVolume(n / 100f)
+                    return RouteResult.Spoke("Volume set to $n percent.")
+                }
+            }
         }
 
         // --- brightness ---
@@ -1307,17 +1347,130 @@ class CommandRouter(private val context: Context) {
         }
     }
 
+
+    private fun describeCurrentApp(): String {
+        return try {
+            val pkg = try {
+                com.d4tech.d4ai.screen.D4AiAccessibilityService.rootPackageName()
+            } catch (_: Exception) {
+                null
+            } ?: try {
+                @Suppress("DEPRECATION")
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                am.getRunningTasks(1)?.firstOrNull()?.topActivity?.packageName
+            } catch (_: Exception) {
+                null
+            }
+            val screen = try {
+                com.d4tech.d4ai.screen.D4AiAccessibilityService.readScreen()
+            } catch (_: Exception) {
+                null
+            }
+            if (pkg.isNullOrBlank() && screen.isNullOrBlank()) {
+                return "I could not detect the current app. Enable D4AI in Accessibility settings."
+            }
+            val label = if (!pkg.isNullOrBlank()) {
+                try {
+                    val ai = context.packageManager.getApplicationInfo(pkg, 0)
+                    context.packageManager.getApplicationLabel(ai).toString()
+                } catch (_: Exception) {
+                    pkg
+                }
+            } else "Unknown app"
+            buildString {
+                append("You are in $label")
+                if (!pkg.isNullOrBlank()) append(" ($pkg)")
+                append(".")
+                if (!screen.isNullOrBlank()) append(" On this screen I can see: ${screen.take(500)}")
+                else append(" Turn on D4AI accessibility for full screen reading.")
+            }
+        } catch (e: Exception) {
+            "Could not read current app: ${e.message}"
+        }
+    }
+
+    private fun listInstalledAppsBrief(): String {
+        return try {
+            val pm = context.packageManager
+            val apps = pm.getInstalledApplications(0)
+                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                .map { pm.getApplicationLabel(it).toString() }
+                .distinct()
+                .sorted()
+            if (apps.isEmpty()) return "No launchable apps found."
+            "You have ${apps.size} apps. Here are some: " + apps.take(40).joinToString(", ") +
+                if (apps.size > 40) " … and more." else "."
+        } catch (e: Exception) {
+            "Could not list apps: ${e.message}"
+        }
+    }
+
+    private fun describeInstalledApp(name: String): String {
+        return try {
+            val pm = context.packageManager
+            val match = pm.getInstalledApplications(0).firstOrNull {
+                pm.getApplicationLabel(it).toString().contains(name, true) ||
+                    it.packageName.contains(name.replace(" ", ""), true)
+            } ?: return "I could not find an app named $name."
+            val label = pm.getApplicationLabel(match).toString()
+            val size = try {
+                val f = java.io.File(match.sourceDir)
+                val mb = f.length() / (1024.0 * 1024.0)
+                String.format("%.1f MB", mb)
+            } catch (_: Exception) { "unknown" }
+            "App: $label. Package: ${match.packageName}. Install size about $size. " +
+                "Enabled: ${match.enabled}. You can say open $label or tell me about permissions in system settings."
+        } catch (e: Exception) {
+            "Could not inspect app: ${e.message}"
+        }
+    }
+
+    private fun typeOnScreen(text: String): String {
+        return try {
+            if (!com.d4tech.d4ai.screen.D4AiAccessibilityService.connected()) {
+                return com.d4tech.d4ai.screen.D4AiAccessibilityService.openAccessibilitySettings(context)
+            }
+            val ok = com.d4tech.d4ai.screen.D4AiAccessibilityService.typeText(text)
+            if (ok) "Typed: $text" else "Could not type — focus an input box first, or say tap on the text field."
+        } catch (e: Exception) {
+            "Type failed: ${e.message}"
+        }
+    }
+
+    private fun tapOnScreen(label: String): String {
+        return try {
+            if (!com.d4tech.d4ai.screen.D4AiAccessibilityService.connected()) {
+                return com.d4tech.d4ai.screen.D4AiAccessibilityService.openAccessibilitySettings(context)
+            }
+            val cleaned = label.trim().trimEnd('.')
+            var ok = false
+            val latch = java.util.concurrent.CountDownLatch(1)
+            com.d4tech.d4ai.screen.D4AiAccessibilityService.tap(cleaned) {
+                ok = it
+                latch.countDown()
+            }
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            if (ok) "Tapped $cleaned." else "Could not find "$cleaned" on the screen."
+        } catch (e: Exception) {
+            "Tap failed: ${e.message}"
+        }
+    }
+
     private fun setVolume(fraction: Float) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        am.setStreamVolume(AudioManager.STREAM_MUSIC, (max * fraction).roundToInt().coerceIn(0, max), 0)
+        am.setStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            (max * fraction).roundToInt().coerceIn(0, max),
+            AudioManager.FLAG_SHOW_UI,
+        )
     }
 
     private fun adjustVolume(steps: Int) {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val dir = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
         repeat(kotlin.math.abs(steps)) {
-            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, AudioManager.FLAG_SHOW_UI)
         }
     }
 

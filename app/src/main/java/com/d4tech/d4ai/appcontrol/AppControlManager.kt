@@ -79,10 +79,17 @@ class AppControlManager(private val context: Context) {
             }
             StepType.PRESS_SEARCH -> {
                 if (!ensureA11y()) return a11yPrompt()
-                // Try search / enter by tapping Search or using global - limited
-                if (tapSync("Search")) "Searching."
-                else if (tapSync("search")) "Searching."
-                else "Search submitted if keyboard did it."
+                when {
+                    tapSync("Search") -> "Searching."
+                    tapSync("search") -> "Searching."
+                    tapSync("Go") -> "Searching."
+                    tapSync("Enter") -> "Searching."
+                    else -> {
+                        // try IME action via type newline
+                        D4AiAccessibilityService.typeText("\n")
+                        "Submitted search."
+                    }
+                }
             }
             StepType.SCROLL -> {
                 if (!ensureA11y()) return a11yPrompt()

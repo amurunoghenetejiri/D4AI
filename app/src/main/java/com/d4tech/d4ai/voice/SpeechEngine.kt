@@ -46,26 +46,39 @@ class SpeechEngine(
     private var lastListeningNotified = false
     private var restartScheduled = false
 
+    @Volatile var isSpeaking: Boolean = false
+        private set
+    @Volatile var isListening: Boolean = false
+        private set
+
     fun init(onReady: () -> Unit = {}) {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             tts?.language = Locale.getDefault()
+            tts?.setSpeechRate(1.08f)
+            tts?.setPitch(1.0f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
+                    isSpeaking = true
                     main.post { onSpeakingChanged(true) }
                 }
 
                 override fun onDone(utteranceId: String?) {
                     main.post {
-                        onSpeakingChanged(false)
-                        onSpeakDone()
-                        if (wantListen) restartIn(260) // small echo gap, TTS audio decays
+                        // only clear speaking when queue finished (last chunk)
+                        isSpeaking = engineSpeaking()
+                        if (!isSpeaking) {
+                            onSpeakingChanged(false)
+                            onSpeakDone()
+                            if (wantListen) restartIn(280)
+                        }
                     }
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
                     main.post {
+                        isSpeaking = false
                         onSpeakingChanged(false)
                         onSpeakDone()
                         if (wantListen) restartIn(300)
@@ -83,18 +96,65 @@ class SpeechEngine(
         }
     }
 
+    private fun engineSpeaking(): Boolean {
+        return try { tts?.isSpeaking == true } catch (_: Exception) { false }
+    }
+
     fun speak(text: String, listenAfter: Boolean = true) {
         wantListen = listenAfter
-        lastSpoken = normalize(text)
+        val clean = normalize(text).replace(Regex("(?i)404(\s*error)?"), " ").trim()
+        if (clean.isBlank()) {
+            if (listenAfter) startListening()
+            return
+        }
+        lastSpoken = clean
         stopListening()
         val engine = tts
         if (engine == null || !ttsReady) {
+            isSpeaking = false
             onSpeakingChanged(false)
             if (listenAfter) startListening()
             return
         }
-        val id = UUID.randomUUID().toString()
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+        // Chunk long answers so TTS does not cut out / error mid-sentence
+        val chunks = chunkForTts(clean)
+        isSpeaking = true
+        onSpeakingChanged(true)
+        chunks.forEachIndexed { i, chunk ->
+            val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            val id = UUID.randomUUID().toString() + "_$i"
+            engine.speak(chunk, mode, null, id)
+        }
+    }
+
+    private fun chunkForTts(text: String, maxLen: Int = 350): List<String> {
+        if (text.length <= maxLen) return listOf(text)
+        val parts = ArrayList<String>()
+        val sentences = text.split(Regex("(?<=[.!?])\s+"))
+        val buf = StringBuilder()
+        for (s in sentences) {
+            if (buf.isNotEmpty() && buf.length + s.length + 1 > maxLen) {
+                parts += buf.toString().trim()
+                buf.clear()
+            }
+            if (s.length > maxLen) {
+                if (buf.isNotEmpty()) {
+                    parts += buf.toString().trim()
+                    buf.clear()
+                }
+                var i = 0
+                while (i < s.length) {
+                    val end = (i + maxLen).coerceAtMost(s.length)
+                    parts += s.substring(i, end)
+                    i = end
+                }
+            } else {
+                if (buf.isNotEmpty()) buf.append(' ')
+                buf.append(s)
+            }
+        }
+        if (buf.isNotEmpty()) parts += buf.toString().trim()
+        return parts.ifEmpty { listOf(text.take(maxLen)) }
     }
 
     fun startListening() {
@@ -178,6 +238,7 @@ class SpeechEngine(
     private fun notifyListening(on: Boolean) {
         if (on == lastListeningNotified) return
         lastListeningNotified = on
+        isListening = on
         onListening(on)
     }
 

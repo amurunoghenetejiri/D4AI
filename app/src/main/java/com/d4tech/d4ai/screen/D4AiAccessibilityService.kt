@@ -79,6 +79,14 @@ class D4AiAccessibilityService : AccessibilityService() {
             return "On $appLabel I can see: $body"
         }
 
+        fun rootPackageName(): String? {
+            val svc = instance ?: return null
+            val root = svc.rootInActiveWindow ?: return null
+            val pkg = root.packageName?.toString()
+            root.recycleSafe()
+            return pkg
+        }
+
         private fun collectText(node: AccessibilityNodeInfo?, out: LinkedHashSet<String>, depth: Int) {
             if (node == null || depth > 25 || out.size > 60) return
             node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.length <= 120 }?.let { out.add(it) }

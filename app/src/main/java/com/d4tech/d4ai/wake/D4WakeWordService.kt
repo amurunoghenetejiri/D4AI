@@ -346,9 +346,22 @@ class D4WakeWordService : Service() {
     private fun resetIdleTimer() {
         idleTimer?.cancel()
         idleTimer = object : CountDownTimer(15_000L, 1000L) {
-            override fun onTick(millisUntilFinished: Long) {}
+            override fun onTick(millisUntilFinished: Long) {
+                // no-op; activity is refreshed from speech/listen callbacks via resetIdleTimer()
+            }
             override fun onFinish() {
-                if (mode == Mode.LIVE) goBackToSleep(speak = true)
+                if (mode != Mode.LIVE) return
+                val busy = try {
+                    speech?.isSpeaking == true || speech?.isListening == true
+                } catch (_: Exception) {
+                    false
+                }
+                // Only sleep when neither D4AI nor the user is active
+                if (busy) {
+                    resetIdleTimer()
+                    return
+                }
+                goBackToSleep(speak = true)
             }
         }.start()
     }
