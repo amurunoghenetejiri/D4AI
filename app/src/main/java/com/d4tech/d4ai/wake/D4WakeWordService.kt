@@ -116,6 +116,18 @@ class D4WakeWordService : Service() {
                 stopSelf()
             }
             ACTION_FORCE_WAKE -> onWakeWordDetected()
+            ACTION_ENABLE_SPOTTING -> {
+                getSharedPreferences("d4ai", MODE_PRIVATE).edit()
+                    .putBoolean("voice_wake_spotting", true).apply()
+                wantRunning = true
+                startLowPowerListening()
+            }
+            ACTION_DISABLE_SPOTTING -> {
+                getSharedPreferences("d4ai", MODE_PRIVATE).edit()
+                    .putBoolean("voice_wake_spotting", false).apply()
+                wantRunning = true
+                startLowPowerListening()
+            }
             else -> {
                 wantRunning = true
                 if (mode == Mode.SLEEP) startLowPowerListening()
@@ -124,15 +136,40 @@ class D4WakeWordService : Service() {
         return START_STICKY
     }
 
-    /** Continuous wake spotting — not full conversation mic. */
+    /**
+     * SLEEP = mic fully released (no green privacy dot).
+     * Android always shows the green mic while SpeechRecognizer/AudioRecord is open,
+     * so true "silent wait for Hey D4AI" cannot use continuous STT without the dot.
+     * Default: hardware / notification / Assist wake only.
+     * Optional: prefs voice_wake_spotting=true enables continuous phrase spotting (green dot on).
+     */
     private fun startLowPowerListening() {
         mode = Mode.SLEEP
         BubbleOverlay.hide()
         speech?.stopListening()
         idleTimer?.cancel()
+        releaseWakeMic()
         ensureChannel()
         startForeground(NOTIF_ID, buildNotif(sleeping = true))
-        main.post { startWakeRecognizer() }
+        val spotting = try {
+            getSharedPreferences("d4ai", MODE_PRIVATE).getBoolean("voice_wake_spotting", false)
+        } catch (_: Exception) {
+            false
+        }
+        if (spotting) {
+            main.post { startWakeRecognizer() }
+        }
+    }
+
+    private fun releaseWakeMic() {
+        restartWakeRunnable?.let { main.removeCallbacks(it) }
+        try {
+            wakeRecognizer?.stopListening()
+            wakeRecognizer?.cancel()
+            wakeRecognizer?.destroy()
+        } catch (_: Exception) {
+        }
+        wakeRecognizer = null
     }
 
     private fun startWakeRecognizer() {
@@ -324,8 +361,9 @@ class D4WakeWordService : Service() {
         if (speak) {
             speech?.speak("Going to sleep. Say hey D4AI when you need me.", listenAfter = false)
         }
+        releaseWakeMic()
         startForeground(NOTIF_ID, buildNotif(sleeping = true))
-        // Restart wake spotting after a short gap so TTS doesn't self-trigger
+        // After TTS, re-enter sleep (mic stays off unless spotting enabled)
         main.postDelayed({
             if (wantRunning && mode == Mode.SLEEP) startLowPowerListening()
         }, 1800)
@@ -390,13 +428,28 @@ class D4WakeWordService : Service() {
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = if (sleeping) "D4AI — say Hey D4AI" else "D4AI is LIVE"
-        val text = if (sleeping) "Sleeping. Say Hey D4AI to wake me." else "Listening for your command…"
+        val wakePi = PendingIntent.getService(
+            this, 1,
+            Intent(this, D4WakeWordService::class.java).setAction(ACTION_FORCE_WAKE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val spotting = try {
+            getSharedPreferences("d4ai", MODE_PRIVATE).getBoolean("voice_wake_spotting", false)
+        } catch (_: Exception) {
+            false
+        }
+        val title = if (sleeping) "D4AI sleeping" else "D4AI is LIVE"
+        val text = when {
+            !sleeping -> "Listening for your command…"
+            spotting -> "Mic spotting for Hey D4AI (green dot may show)"
+            else -> "Mic off. Tap Wake, long-press Home, or earpod to wake."
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(open)
+            .addAction(android.R.drawable.ic_btn_speak_now, "Wake D4AI", wakePi)
             .setOngoing(true)
             .setSilent(true)
             .build()
@@ -431,6 +484,8 @@ class D4WakeWordService : Service() {
         const val NOTIF_ID = 44
         const val ACTION_STOP = "com.d4tech.d4ai.WAKE_STOP"
         const val ACTION_FORCE_WAKE = "com.d4tech.d4ai.WAKE_FORCE"
+        const val ACTION_ENABLE_SPOTTING = "com.d4tech.d4ai.WAKE_SPOT_ON"
+        const val ACTION_DISABLE_SPOTTING = "com.d4tech.d4ai.WAKE_SPOT_OFF"
 
         /** Flexible wake phrases — offline matching on STT text. */
         fun isWakePhrase(raw: String): Boolean {
@@ -444,7 +499,8 @@ class D4WakeWordService : Service() {
                 "hey d4ai", "hi d4ai", "ok d4ai", "okay d4ai",
                 "hey d four ai", "hey d for ai", "hey dee for ai",
                 "hey d4 ai", "hi d four ai", "d four ai",
-                "d4ai", "hey d4", "wake up d4ai",
+                "d4ai", "hey d4", "wake up d4ai", "wake d4ai",
+                "afa", "hey afa", "hi afa", "wake", "wake up",
             )
             if (phrases.any { n == it || n.startsWith("$it ") || n.endsWith(" $it") || n.contains(" $it ") }) {
                 return true
