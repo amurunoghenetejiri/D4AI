@@ -79,6 +79,15 @@ class D4AiAccessibilityService : AccessibilityService() {
             return "On $appLabel I can see: $body"
         }
 
+        fun globalAction(action: Int): Boolean {
+            val svc = instance ?: return false
+            return try {
+                svc.performGlobalAction(action)
+            } catch (_: Exception) {
+                false
+            }
+        }
+
         fun rootPackageName(): String? {
             val svc = instance ?: return null
             val root = svc.rootInActiveWindow ?: return null

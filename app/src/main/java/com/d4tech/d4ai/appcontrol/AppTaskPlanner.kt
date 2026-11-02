@@ -110,6 +110,30 @@ object AppTaskPlanner {
             return steps
         }
 
+
+        // TikTok search
+        Regex("""(?:search(?:\s+for)?|find)\s+(.+?)\s+on\s+tiktok""", RegexOption.IGNORE_CASE).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "tiktok")
+            steps += TaskStep(StepType.WAIT, "2000")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "500")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.SPEAK, "Searching TikTok for $q.")
+            return steps
+        }
+        Regex("""(?:search(?:\s+for)?|find)\s+(.+?)\s+on\s+youtube""", RegexOption.IGNORE_CASE).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "youtube")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.SPEAK, "Searching YouTube for $q.")
+            return steps
+        }
+
         // Chrome / browser search (many phrasings)
         Regex(
             """(?:(?:open|enter|launch)\s+)?(?:google\s+)?(?:chrome|browser).*?(?:search(?:\s+for)?|look\s+up|google)\s+(.+)$""",

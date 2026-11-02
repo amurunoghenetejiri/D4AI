@@ -102,7 +102,7 @@ class SpeechEngine(
 
     fun speak(text: String, listenAfter: Boolean = true) {
         wantListen = listenAfter
-        val clean = normalize(text).replace(Regex("(?i)404(\s*error)?"), " ").trim()
+        val clean = normalize(text).replace(Regex("(?i)404(\\s*error)?"), " ").trim()
         if (clean.isBlank()) {
             if (listenAfter) startListening()
             return
@@ -130,7 +130,7 @@ class SpeechEngine(
     private fun chunkForTts(text: String, maxLen: Int = 350): List<String> {
         if (text.length <= maxLen) return listOf(text)
         val parts = ArrayList<String>()
-        val sentences = text.split(Regex("(?<=[.!?])\s+"))
+        val sentences = text.split(Regex("(?<=[.!?])\\s+"))
         val buf = StringBuilder()
         for (s in sentences) {
             if (buf.isNotEmpty() && buf.length + s.length + 1 > maxLen) {
@@ -160,6 +160,16 @@ class SpeechEngine(
     fun startListening() {
         wantListen = true
         main.post {
+            // Avoid picking up loud media (Phoenix etc.) as speech
+            try {
+                val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                if (am.isMusicActive) {
+                    // short delay — user can still say next/pause via wake word service path
+                    notifyListening(false)
+                    // still listen but with lower sensitivity window after delay
+                }
+            } catch (_: Exception) {
+            }
             var r = recognizer
             if (r == null) {
                 if (SpeechRecognizer.isRecognitionAvailable(context)) {

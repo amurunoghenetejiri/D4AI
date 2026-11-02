@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
+import android.app.SearchManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -161,6 +162,32 @@ class CommandRouter(private val context: Context) {
         val lower = text.lowercase().trim()
         if (lower.isEmpty()) return RouteResult.NotCommand
 
+        // Fast local arithmetic (no network)
+        Regex("""(?i)^(?:what(?:\s+is)?\s+)?(\d+(?:\.\d+)?)\s*(?:times|x|\*|multiplied by)\s*(\d+(?:\.\d+)?)\s*\??$""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            val r = a * b
+            val out = if (r == r.toLong().toDouble()) r.toLong().toString() else r.toString()
+            return RouteResult.Spoke(out)
+        }
+        Regex("""(?i)^(?:what(?:\s+is)?\s+)?(\d+(?:\.\d+)?)\s*(?:plus|\+)\s*(\d+(?:\.\d+)?)\s*\??$""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            val r = a + b
+            val out = if (r == r.toLong().toDouble()) r.toLong().toString() else r.toString()
+            return RouteResult.Spoke(out)
+        }
+        Regex("""(?i)^(?:what(?:\s+is)?\s+)?(\d+(?:\.\d+)?)\s*(?:minus|-)\s*(\d+(?:\.\d+)?)\s*\??$""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            val r = a - b
+            val out = if (r == r.toLong().toDouble()) r.toLong().toString() else r.toString()
+            return RouteResult.Spoke(out)
+        }
+        Regex("""(?i)^(?:what(?:\s+is)?\s+)?(\d+(?:\.\d+)?)\s*(?:divided by|/)\s*(\d+(?:\.\d+)?)\s*\??$""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            if (b == 0.0) return RouteResult.Spoke("Cannot divide by zero.")
+            val r = a / b
+            return RouteResult.Spoke(r.toString())
+        }
+
         // --- device / app awareness ---
         if (matchesAny(lower, "which app am i in", "what app am i in", "what app is this", "current app", "which app is open")) {
             return RouteResult.Spoke(describeCurrentApp())
@@ -233,6 +260,31 @@ class CommandRouter(private val context: Context) {
                     pending = null
                     return RouteResult.Spoke("Okay, cancelled.")
                 }
+            }
+            if (p.type == "call_pick") {
+                val n = when {
+                    lower.contains("number one") || lower.contains("first") || Regex("\\b1\\b").containsMatchIn(lower) || lower == "one" || lower.trim() == "1" -> 1
+                    lower.contains("number two") || lower.contains("second") || Regex("\\b2\\b").containsMatchIn(lower) || lower == "two" || lower.trim() == "2" -> 2
+                    lower.contains("number three") || lower.contains("third") || Regex("\\b3\\b").containsMatchIn(lower) || lower == "three" || lower.trim() == "3" -> 3
+                    lower.contains("number four") || Regex("\\b4\\b").containsMatchIn(lower) || lower == "four" || lower.trim() == "4" -> 4
+                    lower.contains("number five") || Regex("\\b5\\b").containsMatchIn(lower) || lower == "five" || lower.trim() == "5" -> 5
+                    else -> Regex("(\\d+)").find(lower)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                }
+                if (n != null && n in 1..contactCandidates.size) {
+                    val (disp, num) = contactCandidates[n - 1]
+                    pending = null
+                    if (simCount() >= 2) {
+                        pending = PendingAction("call_sim", num)
+                        return RouteResult.Spoke("Calling $disp. Say SIM 1 or SIM 2.")
+                    }
+                    return RouteResult.Spoke(placeCall(num) + " ($disp)")
+                }
+                if (isNo(lower)) {
+                    pending = null
+                    contactCandidates = emptyList()
+                    return RouteResult.Spoke("Okay, cancelled.")
+                }
+                return RouteResult.Spoke("Say number 1, 2, or 3 for the contact you want.")
             }
             if (isYes(lower)) {
                 val r = execute(p)
@@ -311,15 +363,35 @@ class CommandRouter(private val context: Context) {
             )
         }
 
+
+        // --- media transport (works while Phoenix / any player is active) ---
+        if (matchesAny(lower, "next song", "next track", "skip song", "skip track", "next music") || lower == "next") {
+            return RouteResult.Spoke(mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT, "Next track."))
+        }
+        if (matchesAny(lower, "previous song", "previous track", "last song", "prev song") || lower == "previous") {
+            return RouteResult.Spoke(mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS, "Previous track."))
+        }
+        if (matchesAny(lower, "pause music", "pause song", "pause the music") || lower == "pause") {
+            return RouteResult.Spoke(mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PAUSE, "Paused."))
+        }
+        if (matchesAny(lower, "resume music", "continue music", "unpause") || lower == "resume" || lower == "play") {
+            if (lower == "play" || lower == "resume") {
+                return RouteResult.Spoke(mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY, "Playing."))
+            }
+        }
+
         // --- music ---
         if (lower == "play music" || lower == "play some music" || lower == "play a song" ||
-            lower.startsWith("play music") || lower == "music please"
+            lower.startsWith("play music") || lower == "music please" ||
+            lower == "play phoenix" || lower.contains("play on phoenix")
         ) {
-            pending = PendingAction("play_music_wait")
-            return RouteResult.NeedConfirm(
-                pending!!,
-                "Do you have a song in mind, or should I play something nice?",
-            )
+            return RouteResult.Spoke(playWithPhoenix(null))
+        }
+        Regex("(?i)^play\s+(.+?)\s+(?:on|from)\s+phoenix(?:\s+music)?").find(text)?.let {
+            return RouteResult.Spoke(playWithPhoenix(it.groupValues[1].trim()))
+        }
+        Regex("(?i)^play\s+(.+?)\s+on\s+youtube\s*music").find(text)?.let {
+            return RouteResult.Spoke(playOnYoutubeMusic(it.groupValues[1].trim()))
         }
         Regex("^play\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let { m ->
             val song = m.groupValues[1].trim()
@@ -552,6 +624,18 @@ class CommandRouter(private val context: Context) {
         Regex("^block\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let {
             pending = PendingAction("block", it.groupValues[1].trim())
             return RouteResult.NeedConfirm(pending!!, "Block ${it.groupValues[1].trim()}? Say yes or no.")
+        }
+
+        // --- home / recent / bank ---
+
+        if (matchesAny(lower, "previous app", "last app", "go back to previous app", "switch app")) {
+            return RouteResult.Spoke(mediaKey(android.view.KeyEvent.KEYCODE_APP_SWITCH, "Opening recent apps — pick the previous one.") + " " + openRecents())
+        }
+        if (matchesAny(lower, "recent apps", "recents", "show recents", "open recent")) {
+            return RouteResult.Spoke(openRecents())
+        }
+        if (matchesAny(lower, "open bank", "open banking", "bank app", "go to bank")) {
+            return RouteResult.Spoke(openBankApp())
         }
 
         // --- home / recent (limited without accessibility) ---
@@ -1450,10 +1534,140 @@ class CommandRouter(private val context: Context) {
                 latch.countDown()
             }
             latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-            if (ok) "Tapped $cleaned." else "Could not find "$cleaned" on the screen."
+            if (ok) "Tapped $cleaned." else "Could not find '$cleaned' on the screen."
         } catch (e: Exception) {
             "Tap failed: ${e.message}"
         }
+    }
+
+
+    private fun mediaKey(code: Int, spoken: String): String {
+        return try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val down = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code)
+            val up = android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, code)
+            am.dispatchMediaKeyEvent(down)
+            am.dispatchMediaKeyEvent(up)
+            spoken
+        } catch (e: Exception) {
+            "Could not control media: ${e.message}"
+        }
+    }
+
+    private fun playWithPhoenix(query: String?): String {
+        val pkgs = listOf(
+            "com.afollestad.phoenix",
+            "com.phoenix.music",
+            "com.phoenix.musicplayer",
+            "com.phonix.music",
+            "com.phoenix.player",
+            "code.name.monkey.retromusic",
+            "com.google.android.apps.youtube.music",
+        )
+        val pm = context.packageManager
+        var target: String? = null
+        for (pkg in pkgs) {
+            try {
+                pm.getPackageInfo(pkg, 0)
+                target = pkg
+                break
+            } catch (_: Exception) {
+            }
+        }
+        // fuzzy match installed apps named Phoenix
+        if (target == null) {
+            try {
+                target = pm.getInstalledApplications(0).firstOrNull {
+                    val label = pm.getApplicationLabel(it).toString().lowercase()
+                    label.contains("phoenix") && pm.getLaunchIntentForPackage(it.packageName) != null
+                }?.packageName
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            if (target != null) {
+                val launch = pm.getLaunchIntentForPackage(target)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launch)
+                }
+                if (!query.isNullOrBlank()) {
+                    // media search intent targeted at package when possible
+                    val search = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                        .setPackage(target)
+                        .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, MediaStore.Audio.Media.ENTRY_CONTENT_TYPE)
+                        .putExtra(SearchManager.QUERY, query)
+                        .putExtra(MediaStore.EXTRA_MEDIA_TITLE, query)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        context.startActivity(search)
+                    } catch (_: Exception) {
+                    }
+                    "Playing $query on Phoenix."
+                } else {
+                    // start playback
+                    mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY, "")
+                    "Playing music on Phoenix."
+                }
+            } else {
+                // fallback library
+                if (!query.isNullOrBlank()) playMusicNamed(query) else playAnyMusic()
+            }
+        } catch (e: Exception) {
+            "Music error: ${e.message}"
+        }
+    }
+
+    private fun playOnYoutubeMusic(query: String): String {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/search?q=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            "Searching YouTube Music for $query."
+        } catch (e: Exception) {
+            "Could not open YouTube Music: ${e.message}"
+        }
+    }
+
+    private fun openRecents(): String {
+        return try {
+            // Accessibility global action
+            val ok = try {
+                com.d4tech.d4ai.screen.D4AiAccessibilityService.globalAction(
+                    android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
+                )
+            } catch (_: Exception) {
+                false
+            }
+            if (ok) "Opened recent apps."
+            else {
+                // KEYCODE_APP_SWITCH
+                mediaKey(android.view.KeyEvent.KEYCODE_APP_SWITCH, "Opening recent apps.")
+            }
+        } catch (e: Exception) {
+            "Could not open recents: ${e.message}"
+        }
+    }
+
+    private fun openBankApp(): String {
+        val banks = listOf("opay", "palmpay", "moneypoint", "kuda", "gtbank", "access", "first bank", "uba", "zenith", "bank")
+        val pm = context.packageManager
+        for (b in banks) {
+            try {
+                val match = pm.getInstalledApplications(0).firstOrNull {
+                    pm.getApplicationLabel(it).toString().contains(b, true) &&
+                        pm.getLaunchIntentForPackage(it.packageName) != null
+                }
+                if (match != null) {
+                    val i = pm.getLaunchIntentForPackage(match.packageName)!!
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(i)
+                    return "Opening ${pm.getApplicationLabel(match)}."
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return "I could not find a banking app. Say open Opay or open the bank name you use."
     }
 
     private fun setVolume(fraction: Float) {
