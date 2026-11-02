@@ -62,6 +62,12 @@ object MediaGenerator {
 
     /** Build candidate URLs — free path first (no model / no enhance), then quality params. */
     fun candidateUrls(userPrompt: String): List<String> {
+        // Prefer D4AIBrain sharp URL first, then free fallbacks without model (avoid 402)
+        val preferred = try { listOf(D4AIBrain.getImageUrl(userPrompt)) } catch (_: Exception) { emptyList() }
+        return preferred + candidateUrlsLegacy(userPrompt)
+    }
+
+    private fun candidateUrlsLegacy(userPrompt: String): List<String> {
         val enhanced = enhancePrompt(userPrompt)
         val q1 = URLEncoder.encode(enhanced, "UTF-8")
         val q0 = URLEncoder.encode(userPrompt.trim(), "UTF-8")
@@ -83,8 +89,8 @@ object MediaGenerator {
         val out = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return bitmap
         val canvas = Canvas(out)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(140, 255, 255, 255)
-            textSize = (out.width * 0.035f).coerceIn(28f, 56f)
+            color = Color.argb(90, 255, 255, 255)
+            textSize = (out.width * 0.028f).coerceIn(22f, 42f)
             isFakeBoldText = true
             setShadowLayer(4f, 1f, 1f, Color.argb(120, 0, 0, 0))
         }

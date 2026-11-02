@@ -66,45 +66,31 @@ object PollinationsClient {
             .edit().putString("pollinations_key", apiKey).apply()
     }
 
-    private val systemPrompt = """
-        You are D4AI — the personal Android AI assistant by D4TECH
-        (Creating Solutions, Innovating Lives). Creator: Amurun Destiny O.
-
-        Identity:
-        - Always call yourself D4AI. Never say you are ChatGPT, Claude, Gemini, Grok, or Pollinations.
-        - Be clear, friendly, and complete your thoughts.
-
-        Personality (very important):
-        - Talk like a warm, loyal friend and personal assistant — never like a cold robot.
-        - Vary your wording every turn; never repeat the same sentence template twice.
-        - Ask one natural follow-up question when it helps (e.g. "What kind of movie are you in the mood for?").
-        - You may address the user warmly as "boss" or "chief" sometimes — relaxed, never stiff.
-        - If a request is vague, ask one short clarifying question before answering.
-
-        Formatting rules (very important):
-        - Never use markdown symbols like ** or __ or *** or ### or ``` or ||| or --- tables with pipes.
-        - Never use LaTeX or raw math codes like \frac, \sqrt, \times, \pm, \cdot.
-        - For math use normal symbols: ² ³ √ × ÷ ± ≈ ≤ ≥ and fractions like 1/2 or (a+b)/c.
-        - Write clean plain sentences. Use short paragraphs. Emojis are OK sparingly.
-        - Prefer practical answers. Keep spoken answers reasonably concise unless asked for detail.
-
-        Behavior:
-        - Answer questions fully and usefully.
-        - CRITICAL continuity: short follow-ups ("give me three applications", "which country",
-          "what year", "mention 2 fields") ALWAYS refer to the last topic you discussed.
-          Never switch topic unless the user clearly starts a new one.
-        - Address the user by name when known (e.g. Destiny, boss, my guy) naturally, not every sentence.
-        - You may receive a silent SCREEN CONTEXT block. Use it to answer about what is on screen
-          (chat replies, game moves) without reading the whole screen aloud unless asked.
-        - Device commands (open apps, battery, flashlight, screenshot, screen record, generate image/video) are handled by the phone. Never say you cannot generate images or videos — the app does that.
-        - Device commands are handled by the phone OS; confirm briefly when relevant.
-        - If asked your name: "I'm D4AI, your personal Android assistant by D4TECH."
-        - Do not mention rate limits, API keys, or underlying model providers.
-        - When the user says goodbye/sleep/stop, answer warmly and briefly.
-    """.trimIndent()
+    private val systemPrompt: String get() = D4AIBrain.SYSTEM_PROMPT
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
         MemoryStore.addChat("user", userMessage)
+        // Prefer D4AIBrain (openai-large / reasoning / gemini / claude-hybrid)
+        try {
+            val guide = userMessage.lowercase().let { l ->
+                l.contains("look at my screen") || l.contains("see my screen") ||
+                    l.contains("how do i") || l.contains("how to") || l.contains("guide me") ||
+                    l.contains("what do i tap") || l.contains("where do i") || l.contains("direct me") ||
+                    l.contains("leave this page") || l.contains("on this page") || l.contains("on my screen")
+            }
+            val reply = if (guide) {
+                D4AIBrain.analyzeScreenAndGuide(userMessage)
+            } else {
+                D4AIBrain.getBrainResponse(userMessage)
+            }
+            if (reply.isNotBlank() && !reply.contains("having trouble reaching", true)) {
+                MemoryStore.addChat("assistant", reply)
+                return@withContext reply
+            }
+        } catch (_: Exception) {
+        }
+
+        // Legacy fallbacks
         val history = MemoryStore.recentChat(16)
         val name = MemoryStore.userName()
         val screen = try {
@@ -113,83 +99,47 @@ object PollinationsClient {
             null
         }
         val sys = buildString {
-            append(systemPrompt)
-            if (name.isNotBlank()) append("\nUser name: ").append(name).append(". Use it warmly sometimes.")
+            append(D4AIBrain.SYSTEM_PROMPT)
+            if (name.isNotBlank()) append("\nUser name: ").append(name)
             if (!screen.isNullOrBlank()) {
-                append("\n\nSCREEN CONTEXT (silent, on device now):\n")
-                append(screen.take(1200))
+                append("\n\nSCREEN CONTEXT:\n").append(screen.take(1200))
             }
-            append("\n\nLast user message may be a follow-up. Stay on the previous topic if it is short.")
         }
         val messages = JSONArray().put(JSONObject().put("role", "system").put("content", sys))
         for (turn in history) {
             messages.put(JSONObject().put("role", turn.role).put("content", turn.content))
         }
+        messages.put(JSONObject().put("role", "user").put("content", userMessage))
 
         val attempts = buildList {
-            // 1) Authenticated gen API (unlimited with sk_)
             if (apiKey.isNotEmpty()) {
                 add(Endpoint.Chat("https://gen.pollinations.ai/v1/chat/completions", "openai", true))
-                add(Endpoint.Chat("https://gen.pollinations.ai/v1/chat/completions", "openai-fast", true))
+                add(Endpoint.Chat("https://gen.pollinations.ai/v1/chat/completions", "openai-large", true))
             }
-            // 2) Legacy free OpenAI-compatible host (keyless)
-            add(Endpoint.Chat("https://text.pollinations.ai/openai", "gpt-oss-20b", false))
-            add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai-fast", false))
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai-large", false))
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "gemini", false))
             add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai", false))
-            add(Endpoint.Chat("https://text.pollinations.ai/openai/chat/completions", "gpt-oss-20b", false))
-            // 3) Simple GET
+            add(Endpoint.Chat("https://text.pollinations.ai/openai", "openai-fast", false))
             add(Endpoint.Get)
         }
-
-        var lastRateLimit: String? = null
-        for ((index, ep) in attempts.withIndex()) {
+        for (ep in attempts) {
             try {
                 val result = when (ep) {
                     is Endpoint.Chat -> postChat(ep.url, ep.model, ep.auth, messages)
                     Endpoint.Get -> getPlain(history)
                 }
-                if (result != null) {
-                    if (isRateLimitText(result)) {
-                        lastRateLimit = result
-                        delay(400L * (index + 1))
-                        continue
-                    }
+                if (!result.isNullOrBlank()) {
                     val reply = sanitize(result)
                     MemoryStore.addChat("assistant", reply)
                     return@withContext reply
                 }
             } catch (_: Exception) {
-                delay(200)
             }
+            delay(300)
         }
-
-        // Final soft retry on GET after short wait
-        delay(1500)
-        try {
-            val again = getPlain(history)
-            if (again != null && !isRateLimitText(again)) {
-                val reply = sanitize(again)
-                MemoryStore.addChat("assistant", reply)
-                return@withContext reply
-            }
-        } catch (_: Exception) {
-        }
-
-        offlineReply()
-    }
-
-    /** Friendly offline answer for questions — all phone commands still work offline. */
-    fun offlineReply(): String {
-        return listOf(
-            "Sorry boss, my smart brain needs internet for that one right now. " +
-                "Everything on your phone still works though — try me with a command, or ask me again in a bit.",
-            "Hmm, I can't reach my knowledge network this moment. Ask me again shortly — meanwhile commands " +
-                "like open WhatsApp, volume up or set an alarm still work perfectly.",
-            "My internet brain is taking a little nap right now, but my hands still work! " +
-                "I can open apps, call, text, set alarms and more. Try that question again in a few minutes.",
-            "That one needs the internet and the network is quiet right now. Give me a minute and ask again — " +
-                "your phone commands all still work offline.",
-        ).random()
+        val fail = "I'm having a short network moment. Commands still work — try your question again."
+        MemoryStore.addChat("assistant", fail)
+        fail
     }
 
     private fun postChat(url: String, model: String, auth: Boolean, messages: JSONArray): String? {
