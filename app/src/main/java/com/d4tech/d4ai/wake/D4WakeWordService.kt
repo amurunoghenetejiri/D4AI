@@ -234,7 +234,8 @@ class D4WakeWordService : Service() {
 
         beepAndVibrate()
         startForeground(NOTIF_ID, buildNotif(sleeping = false))
-        BubbleOverlay.show(applicationContext, listening = true)
+        BubbleOverlay.show(applicationContext)
+        BubbleOverlay.setListening(true)
 
         val greetings = listOf(
             "Yes boss, I'm listening. What do you want me to do?",

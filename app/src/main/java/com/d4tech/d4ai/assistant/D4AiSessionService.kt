@@ -1,35 +1,37 @@
 package com.d4tech.d4ai.assistant
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
-import com.d4tech.d4ai.voice.D4AiListenService
+import com.d4tech.d4ai.wake.D4WakeWordService
 
 /**
- * Assist / long-press Home → wake D4AI in background only (no full UI).
+ * System Assist / long-press Home → wake D4AI in background only.
+ * Does NOT open Settings or MainActivity.
  */
 class D4AiSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession {
         return object : VoiceInteractionSession(this) {
             override fun onShow(args: Bundle?, showFlags: Int) {
                 super.onShow(args, showFlags)
+                val wake = Intent(context, D4WakeWordService::class.java).apply {
+                    action = D4WakeWordService.ACTION_FORCE_WAKE
+                }
                 try {
-                    val wake = Intent(context, D4AiListenService::class.java).apply {
-                        action = D4AiListenService.ACTION_WAKE
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(wake)
+                    } else {
+                        context.startService(wake)
                     }
-                    context.startForegroundService(wake)
                 } catch (_: Exception) {
                     try {
-                        context.startService(
-                            Intent(context, D4AiListenService::class.java).apply {
-                                action = D4AiListenService.ACTION_WAKE
-                            },
-                        )
+                        context.startService(wake)
                     } catch (_: Exception) {
                     }
                 }
-                // Stay in background — do not open MainActivity
+                // Never open app UI / settings — stay in background
                 hide()
             }
         }
