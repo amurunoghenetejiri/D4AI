@@ -3,7 +3,6 @@ package com.d4tech.d4ai.voice
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
