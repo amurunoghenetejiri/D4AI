@@ -36,6 +36,7 @@ import {
   Settings,
   Share2,
   Shield,
+  Sparkles,
   Square,
   Sun,
   ThumbsDown,
