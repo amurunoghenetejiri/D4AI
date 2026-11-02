@@ -66,6 +66,21 @@ object PollinationsClient {
             .edit().putString("pollinations_key", apiKey).apply()
     }
 
+    /** Spoken when network/brain is unavailable. */
+    fun offlineReply(): String {
+        val name = try {
+            com.d4tech.d4ai.memory.MemoryStore.userName().ifBlank { "boss" }
+        } catch (_: Exception) {
+            "boss"
+        }
+        return listOf(
+            "I can't reach my knowledge network right now, $name. Commands still work — try opening an app or asking again shortly.",
+            "Network is slow on my side. Device commands still work. Try your question again in a moment.",
+            "I'm offline for chat at the moment, $name. I can still control the phone — say open WhatsApp or check battery.",
+        ).random()
+    }
+
+
     private val systemPrompt: String get() = D4AIBrain.SYSTEM_PROMPT
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
