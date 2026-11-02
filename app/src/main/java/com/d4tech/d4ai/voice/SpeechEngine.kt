@@ -55,7 +55,7 @@ class SpeechEngine(
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             tts?.language = Locale.getDefault()
-            tts?.setSpeechRate(1.08f)
+            tts?.setSpeechRate(1.0f)
             tts?.setPitch(1.0f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
@@ -190,9 +190,10 @@ class SpeechEngine(
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 // Give the user a calm window: ~1s of silence before D4AI decides
                 // the sentence is over, and ~8s max before it re-arms quietly.
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8000L)
+                // End utterance ~0.8s after user stops talking (fast response, natural voice speed)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 600L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400L)
             }
             try {
                 r.startListening(intent)
