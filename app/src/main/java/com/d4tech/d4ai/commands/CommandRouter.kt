@@ -387,10 +387,10 @@ class CommandRouter(private val context: Context) {
         ) {
             return RouteResult.Spoke(playWithPhoenix(null))
         }
-        Regex("(?i)^play\s+(.+?)\s+(?:on|from)\s+phoenix(?:\s+music)?").find(text)?.let {
+        Regex("""(?i)^play\s+(.+?)\s+(?:on|from)\s+phoenix(?:\s+music)?""").find(text)?.let {
             return RouteResult.Spoke(playWithPhoenix(it.groupValues[1].trim()))
         }
-        Regex("(?i)^play\s+(.+?)\s+on\s+youtube\s*music").find(text)?.let {
+        Regex("""(?i)^play\s+(.+?)\s+on\s+youtube\s*music""").find(text)?.let {
             return RouteResult.Spoke(playOnYoutubeMusic(it.groupValues[1].trim()))
         }
         Regex("^play\\s+(.+)$", RegexOption.IGNORE_CASE).find(text)?.let { m ->
