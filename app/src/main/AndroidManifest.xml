@@ -116,6 +116,12 @@
         </service>
 
         <service
+            android:name=".wake.D4WakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <service
             android:name=".voice.D4AiListenService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
@@ -163,6 +169,16 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+    
+        <receiver
+            android:name=".wake.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

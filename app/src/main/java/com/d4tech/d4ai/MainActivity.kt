@@ -19,6 +19,7 @@ import com.d4tech.d4ai.memory.MemoryStore
 import com.d4tech.d4ai.commands.CommandRouter
 import com.d4tech.d4ai.commands.RouteResult
 import com.d4tech.d4ai.voice.D4AiListenService
+import com.d4tech.d4ai.wake.D4WakeWordService
 import com.d4tech.d4ai.voice.SpeechEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,16 @@ class MainActivity : AppCompatActivity() {
         web.loadUrl("file:///android_asset/www/index.html")
 
         ensurePerms()
+        // Always-on free wake word (Hey D4AI)
+        try {
+            val wake = Intent(this, D4WakeWordService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(wake)
+            } else {
+                startService(wake)
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun ensurePerms() {
