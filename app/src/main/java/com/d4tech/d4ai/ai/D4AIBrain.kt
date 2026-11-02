@@ -123,17 +123,25 @@ Formatting:
         }
 
         val models = when {
-            forceReasoning || needsReasoning(prompt) -> listOf("openai-reasoning", "openai-large", "gemini")
-            forceCoding || needsCoding(prompt) -> listOf("claude-hybrid", "openai-large", "gemini")
-            else -> listOf("openai-large", "gemini", "openai", "openai-fast")
+            forceReasoning || needsReasoning(prompt) -> listOf(
+                "openai-large", "openai-reasoning", "gemini", "openai", "openai-fast", "gpt-oss-20b",
+            )
+            forceCoding || needsCoding(prompt) -> listOf(
+                "claude-hybrid", "openai-large", "gemini", "openai", "openai-fast",
+            )
+            else -> listOf(
+                "openai-large", "gemini", "openai", "openai-fast", "gpt-oss-20b", "claude-hybrid",
+            )
         }
 
         var lastErr = "unknown"
-        for (model in models) {
+        for ((attempt, model) in models.withIndex()) {
             try {
+                if (attempt > 0) kotlinx.coroutines.delay(500L * attempt)
+                // GET text endpoint
                 val url = "https://text.pollinations.ai/" +
-                    URLEncoder.encode(fullPrompt.take(12000), "UTF-8") +
-                    "?model=$model&system=" + URLEncoder.encode(sys.take(4000), "UTF-8")
+                    URLEncoder.encode(fullPrompt.take(8000), "UTF-8") +
+                    "?model=$model"
                 val req = Request.Builder()
                     .url(url)
                     .header("User-Agent", "D4AI/1.0")
@@ -141,37 +149,53 @@ Formatting:
                     .get()
                     .build()
                 http.newCall(req).execute().use { res ->
+                    val body = res.body?.string()?.trim().orEmpty()
                     if (!res.isSuccessful) {
                         lastErr = "HTTP ${res.code}"
+                        if (isBusy(body) || res.code == 429 || res.code == 503) return@use
                         return@use
                     }
-                    val body = res.body?.string()?.trim().orEmpty()
-                    if (body.isBlank() || body.length < 2) {
+                    if (body.isBlank()) {
                         lastErr = "empty"
                         return@use
                     }
-                    if (body.contains("rate limit", true) || body.contains("too many", true)) {
-                        lastErr = "rate limit"
+                    if (isBusy(body)) {
+                        lastErr = "busy"
                         return@use
                     }
                     val clean = sanitize(body)
-                    if (clean.isNotBlank()) return@withContext clean
+                    if (clean.isNotBlank() && !isBusy(clean)) {
+                        return@withContext clean
+                    }
                     lastErr = "empty after sanitize"
                 }
             } catch (e: Exception) {
                 lastErr = e.message ?: "error"
             }
+            // POST openai-compatible as alternate path per model
+            try {
+                val post = postOpenAiCompat(fullPrompt.take(8000), model)
+                if (!post.isNullOrBlank() && !isBusy(post)) {
+                    return@withContext sanitize(post)
+                }
+            } catch (e: Exception) {
+                lastErr = e.message ?: lastErr
+            }
         }
 
-        // Fallback POST openai-compatible
+        // Last-resort short prompt GET with gemini
         try {
-            val post = postOpenAiCompat(fullPrompt, models.first())
-            if (!post.isNullOrBlank()) return@withContext sanitize(post)
-        } catch (e: Exception) {
-            lastErr = e.message ?: lastErr
+            val short = "You are D4AI by D4 Tech. Answer helpfully and completely.\nUser: ${prompt.take(500)}\nD4AI:"
+            val url = "https://text.pollinations.ai/" + URLEncoder.encode(short, "UTF-8") + "?model=gemini"
+            val req = Request.Builder().url(url).header("User-Agent", "D4AI/1.0").get().build()
+            http.newCall(req).execute().use { res ->
+                val body = res.body?.string()?.trim().orEmpty()
+                if (body.isNotBlank() && !isBusy(body)) return@withContext sanitize(body)
+            }
+        } catch (_: Exception) {
         }
 
-        "I'm having trouble reaching my brain right now ($lastErr). Try again in a moment — commands still work offline."
+        "I'm briefly overloaded on the free path. Your phone commands still work — try the question once more in a moment."
     }
 
     /** Step-by-step screen guidance. */
@@ -232,6 +256,18 @@ Formatting:
         val bos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality, bos)
         return Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+    }
+
+    private fun isBusy(body: String): Boolean {
+        val l = body.lowercase()
+        return l.contains("rate limit") ||
+            l.contains("too many") ||
+            l.contains("free lane") ||
+            l.contains("lane is busy") ||
+            l.contains("try again") && l.contains("second") ||
+            l.contains("capacity") ||
+            l.contains("overloaded") ||
+            l.contains("429")
     }
 
     private fun needsReasoning(p: String): Boolean {

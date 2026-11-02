@@ -98,7 +98,7 @@ object PollinationsClient {
             } else {
                 D4AIBrain.getBrainResponse(userMessage)
             }
-            if (reply.isNotBlank() && !reply.contains("having trouble reaching", true)) {
+            if (reply.isNotBlank() && !reply.contains("having trouble reaching", true) && !reply.contains("briefly overloaded", true)) {
                 MemoryStore.addChat("assistant", reply)
                 return@withContext reply
             }
@@ -212,6 +212,8 @@ object PollinationsClient {
     private fun isRateLimitText(s: String): Boolean {
         val l = s.lowercase()
         return l.contains("rate limit") ||
+            l.contains("free lane") ||
+            l.contains("lane is busy") ||
             l.contains("free limit reached") ||
             l.contains("pollen") && l.contains("limit") ||
             l.contains("please wait") && l.contains("second") ||
@@ -220,7 +222,7 @@ object PollinationsClient {
 
     private fun sanitize(s: String): String {
         if (isRateLimitText(s)) {
-            return "Please try that again in a few seconds — the free lane was busy."
+            return ""  // signal busy — caller retries other models
         }
         var t = s.trim()
             .replace(Regex("(?i)as an ai language model"), "As D4AI")
