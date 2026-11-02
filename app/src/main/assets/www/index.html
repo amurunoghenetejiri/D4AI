@@ -6,199 +6,372 @@
 <title>D4AI</title>
 <style>
 :root{
-  --bg:#050b18;--nav:#0a1628;--panel:#0d1f3c;--card:#0f2744;
-  --line:#1a3358;--accent:#3b82f6;--cyan:#22d3ee;--text:#e8eef8;--muted:#8ba3c7;
-  --user:#2563eb;--ok:#34d399;
+  --bg:#050d1f;--panel:#0a162f;--card:#0e1f3d;--line:#1a3a6a;
+  --accent:#2563eb;--cyan:#22d3ee;--text:#e8eef8;--muted:#8ba3c7;
+  --user:#1d4ed8;--ai:#122848;--ok:#22c55e;--danger:#ef4444;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:radial-gradient(ellipse at 50% 0%,#0c1e3d 0%,var(--bg) 55%);color:var(--text);
+html,body{height:100%;background:radial-gradient(ellipse at 50% -10%,#123060 0%,var(--bg) 50%);color:var(--text);
 font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
-#app{display:flex;flex-direction:column;height:100%;max-width:560px;margin:0 auto;position:relative}
-header{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(8,16,32,.92);
-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:5;flex-shrink:0}
-header .logo{width:42px;height:42px;border-radius:50%;object-fit:cover;box-shadow:0 0 16px #3b82f655}
+#app{display:flex;flex-direction:column;height:100%;max-width:480px;margin:0 auto;position:relative}
+header{display:flex;align-items:center;gap:10px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));
+background:rgba(8,16,32,.94);border-bottom:1px solid var(--line);z-index:20;flex-shrink:0}
+header .logo{width:40px;height:40px;border-radius:50%;object-fit:cover;box-shadow:0 0 14px #3b82f688;background:#123}
 header .meta{flex:1;min-width:0}
-header .meta h1{font-size:16px;font-weight:700;line-height:1.1}
-header .meta p{font-size:11px;color:var(--ok);margin-top:2px}
+header .meta h1{font-size:16px;font-weight:700}
+header .meta p{font-size:11px;color:var(--ok);margin-top:1px}
 header .meta p span{color:var(--muted)}
-.pill{border:none;border-radius:999px;padding:7px 12px;font-size:11px;font-weight:600;background:#0e7490;color:#fff}
 .icon-btn{background:0;border:0;color:var(--text);font-size:22px;padding:6px 8px;line-height:1}
 #status{display:none;text-align:center;font-size:12px;color:var(--cyan);padding:6px;background:#0a1a30;border-bottom:1px solid var(--line)}
-#main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
-#welcome{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 18px 100px;text-align:center}
-.hero{width:150px;height:150px;border-radius:50%;object-fit:cover;
-animation:float 3s ease-in-out infinite;filter:drop-shadow(0 0 28px #3b82f688)}
-@keyframes float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.03)}}
-.ring{position:relative;margin-bottom:8px}
-.ring::after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid #3b82f633;animation:spin 8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#welcome h2{font-size:32px;font-weight:800;letter-spacing:.5px;margin-top:8px}
-.brand{font-size:11px;letter-spacing:.35em;color:var(--cyan);margin:4px 0}
-.motto{color:var(--muted);font-size:13px;margin-bottom:16px}
-.intro{background:linear-gradient(180deg,#102a4a,#0c2038);border:1px solid var(--line);border-radius:18px;
-padding:16px;text-align:left;font-size:14px;line-height:1.5;max-width:400px;width:100%;
-box-shadow:0 8px 32px #0006}
-#chat{display:none;flex-direction:column;gap:12px;padding:14px 12px 110px}
-.row{display:flex;gap:8px;align-items:flex-end;animation:in .25s ease}
-@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.row.user{flex-direction:row-reverse}
-.row .av{width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0}
-.bubble{max-width:82%;padding:11px 14px;border-radius:18px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
-.row.ai .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:5px}
-.row.user .bubble{background:linear-gradient(135deg,#1d4ed8,#2563eb);border-bottom-right-radius:5px}
-.actions{display:flex;gap:10px;padding:2px 8px 0;opacity:.55;font-size:14px}
-footer{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;
-padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,#07101e 30%);
-border-top:1px solid var(--line)}
-footer .attach,footer .mic,footer .fab{width:42px;height:42px;border-radius:50%;border:0;display:grid;place-items:center;font-size:18px}
-footer .attach{background:transparent;color:var(--muted);font-size:20px}
-footer .mic{background:#132844;color:#fff}
-footer .mic.on{background:#dc2626;box-shadow:0 0 0 4px #dc262633}
-footer input{flex:1;height:44px;border-radius:999px;border:1px solid var(--line);background:#0b1a33;color:var(--text);
-padding:0 16px;font-size:14px;outline:none}
-footer .fab{background:linear-gradient(135deg,#1d4ed8,#06b6d4);padding:0;overflow:hidden}
-footer .fab img{width:42px;height:42px;object-fit:cover}
-#drawer{position:fixed;inset:0;background:#0009;display:none;z-index:30}
-#drawer.open{display:block}
-#drawer .panel{width:min(86vw,340px);height:100%;background:#070f1c;padding:14px 14px 40px;overflow-y:auto;
-border-right:1px solid var(--line);animation:slide .2s ease}
-@keyframes slide{from{transform:translateX(-12px);opacity:.6}to{transform:none;opacity:1}}
-#drawer .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-#drawer .new{width:100%;border:0;border-radius:14px;padding:14px;background:var(--accent);color:#fff;font-weight:700;font-size:15px;margin-bottom:10px}
-#drawer .item{display:flex;align-items:center;gap:12px;padding:13px 6px;border-bottom:1px solid #12233f;font-size:15px}
-#drawer .sec{color:var(--muted);font-size:11px;letter-spacing:.12em;margin:16px 0 6px}
-.typing{display:inline-flex;gap:4px;padding:4px 0}
-.typing i{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:b 1s infinite}
-.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
-@keyframes b{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+#main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}
+#welcome{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 16px 90px;text-align:center}
+.hero{width:160px;height:160px;border-radius:50%;object-fit:cover;animation:float 3.2s ease-in-out infinite;filter:drop-shadow(0 0 32px #3b82f6aa)}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.brand{font-size:36px;font-weight:800;letter-spacing:1px;margin-top:10px;
+background:linear-gradient(90deg,#60a5fa,#a78bfa,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{font-size:11px;color:var(--muted);letter-spacing:.2em;margin-top:2px}
+.tag{font-size:12px;color:var(--muted);margin-top:8px}
+.welcome-card{margin-top:22px;text-align:left;background:linear-gradient(160deg,#0f2748,#0a1a33);border:1px solid #1e4a7a;
+border-radius:16px;padding:14px 16px;max-width:360px;width:100%;box-shadow:0 8px 28px #0006}
+.welcome-card .row{display:flex;gap:10px;align-items:flex-start}
+.welcome-card img{width:28px;height:28px;border-radius:50%}
+.welcome-card strong{display:block;margin-bottom:6px}
+.welcome-card p{font-size:13px;line-height:1.5;color:#c7d7f0}
+#chat{display:none;padding:14px 12px 8px;display:none;flex-direction:column;gap:12px}
+#chat.show{display:flex}
+.msg{display:flex;gap:8px;align-items:flex-end;max-width:100%}
+.msg.user{justify-content:flex-end}
+.msg .av{width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.msg .bubble{max-width:82%;padding:10px 12px;border-radius:16px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.msg.user .bubble{background:linear-gradient(135deg,#1d4ed8,#2563eb);border-bottom-right-radius:4px}
+.msg.ai .bubble{background:linear-gradient(160deg,#122848,#0e1f3a);border:1px solid #1e3a5f;border-bottom-left-radius:4px}
+.msg .time{font-size:10px;color:var(--muted);margin-top:4px;text-align:right}
+.msg.ai .time{text-align:left}
+.actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+.actions button{background:0;border:0;color:var(--muted);font-size:12px;padding:4px 2px}
+.actions button:active{color:var(--cyan)}
+.typing{display:none;align-items:center;gap:8px;padding:4px 4px}
+.typing.on{display:flex}
+.typing .dots{display:flex;gap:4px;background:var(--ai);border:1px solid #1e3a5f;padding:10px 14px;border-radius:16px}
+.typing .dots i{width:7px;height:7px;border-radius:50%;background:var(--cyan);display:block;animation:dot 1.2s infinite}
+.typing .dots i:nth-child(2){animation-delay:.2s}
+.typing .dots i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+#composer-wrap{flex-shrink:0;padding:8px 10px;padding-bottom:max(8px,env(safe-area-inset-bottom));
+background:rgba(6,12,28,.96);border-top:1px solid var(--line);z-index:15}
+#composer{display:flex;align-items:center;gap:8px;background:#0c1a33;border:1px solid #1e3a5f;border-radius:28px;padding:6px 8px 6px 12px}
+#composer input{flex:1;background:0;border:0;color:var(--text);font-size:15px;outline:none;min-width:0}
+#composer .tool{background:0;border:0;color:var(--muted);font-size:18px;padding:6px}
+#composer .send{width:40px;height:40px;border-radius:50%;border:0;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-size:18px}
+#nav{display:flex;border-top:1px solid var(--line);background:#071224;padding-bottom:env(safe-area-inset-bottom);flex-shrink:0}
+#nav button{flex:1;background:0;border:0;color:var(--muted);padding:8px 4px 10px;font-size:10px}
+#nav button.on{color:var(--cyan)}
+#nav button span{display:block;font-size:18px;margin-bottom:2px}
+/* Drawer */
+#drawer-bg{display:none;position:fixed;inset:0;background:#000a;z-index:40}
+#drawer-bg.on{display:block}
+#drawer{position:fixed;top:0;left:0;bottom:0;width:min(86vw,320px);background:linear-gradient(180deg,#0b1730,#07101f);
+border-right:1px solid var(--line);z-index:50;transform:translateX(-105%);transition:transform .25s ease;padding:16px 0;overflow-y:auto}
+#drawer.on{transform:translateX(0)}
+#drawer .head{display:flex;align-items:center;gap:10px;padding:8px 16px 16px;border-bottom:1px solid var(--line);margin-bottom:8px}
+#drawer .head img{width:36px;height:36px;border-radius:50%}
+#drawer .item{display:flex;align-items:center;gap:12px;padding:12px 18px;color:var(--text);font-size:14px;border:0;background:0;width:100%;text-align:left}
+#drawer .item:active,#drawer .item.on{background:#123060}
+#drawer .item.primary{background:linear-gradient(90deg,#1d4ed8,#2563eb);margin:8px 12px;border-radius:12px;width:auto}
+#drawer .sec{font-size:11px;color:var(--muted);padding:14px 18px 6px;text-transform:uppercase;letter-spacing:.08em}
+#drawer .toggle{margin-left:auto}
+/* History */
+#history{display:none;position:fixed;inset:0;background:var(--bg);z-index:30;flex-direction:column}
+#history.on{display:flex}
+#history header{position:relative}
+#history .search{margin:10px 12px;background:#0c1a33;border:1px solid #1e3a5f;border-radius:12px;padding:10px 12px;display:flex;gap:8px;align-items:center}
+#history .search input{flex:1;background:0;border:0;color:var(--text);outline:none;font-size:14px}
+#history .list{flex:1;overflow:auto;padding:0 12px 20px}
+.hitem{display:flex;gap:10px;align-items:center;padding:12px;border:1px solid #1a3358;border-radius:14px;margin-bottom:10px;background:#0c1a33}
+.hitem .ic{width:36px;height:36px;border-radius:50%;background:#123060;display:grid;place-items:center;color:var(--cyan)}
+.hitem .t{font-size:14px;font-weight:600}
+.hitem .s{font-size:12px;color:var(--muted);margin-top:2px}
+/* Sheet */
+#sheet-bg{display:none;position:fixed;inset:0;background:#0008;z-index:60}
+#sheet-bg.on{display:block}
+#sheet{position:fixed;left:12px;right:12px;bottom:max(16px,env(safe-area-inset-bottom));background:#0e1f3d;border:1px solid #1e4a7a;
+border-radius:16px;padding:8px;z-index:61;display:none}
+#sheet.on{display:block}
+#sheet button{display:flex;align-items:center;gap:12px;width:100%;background:0;border:0;color:var(--text);padding:14px 12px;font-size:14px;text-align:left;border-radius:10px}
+#sheet button:active{background:#123060}
+#sheet button.danger{color:#f87171}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <img class="logo" src="file:///android_asset/d4ai_logo.png" alt="D4AI"/>
+    <img class="logo" id="hdrLogo" src="../d4ai_logo.png" alt="D4AI" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ccircle fill=%22%233b82f6%22 cx=%2232%22 cy=%2232%22 r=%2232%22/%3E%3Ctext x=%2232%22 y=%2238%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2218%22 font-family=%22sans-serif%22%3ED4%3C/text%3E%3C/svg%3E'"/>
     <div class="meta">
       <h1>D4AI</h1>
       <p>● Online <span>· v5-Ultimate</span></p>
     </div>
-    <button class="pill" id="btnAuto" type="button">Auto-talk On</button>
-    <button class="icon-btn" id="btnMenu" type="button" aria-label="Menu">☰</button>
+    <button class="icon-btn" id="btnMenu" aria-label="Menu">☰</button>
   </header>
   <div id="status"></div>
   <div id="main">
     <div id="welcome">
-      <div class="ring"><img class="hero" src="file:///android_asset/d4ai_logo.png" alt=""/></div>
-      <h2>D4AI</h2>
-      <div class="brand">D 4 T E C H</div>
-      <div class="motto">Creating Solutions. Innovating Lives.</div>
-      <div class="intro">
-        Hey! 👋 I'm <b>D4AI</b> — your AI buddy.<br/><br/>
-        I'm here anytime you need help: study, code, ideas, phone commands, or just figuring something out. Talk to me like a friend.<br/><br/>
-        Introduce yourself and ask me anything — what's on your mind?
+      <img class="hero" id="heroLogo" src="../d4ai_logo.png" alt="D4AI" onerror="this.style.display='none'"/>
+      <div class="brand">D4AI</div>
+      <div class="sub">D4TECH</div>
+      <div class="tag">Creating Solutions. Innovating Lives.</div>
+      <div class="welcome-card">
+        <div class="row">
+          <img src="../d4ai_logo.png" alt="" onerror="this.style.display='none'"/>
+          <div>
+            <strong>Hello, Boss! 👋</strong>
+            <p>I'm D4AI, your all-round AI assistant. I'm here to help with anything you need — from learning and research to coding, cybersecurity, and more.<br/><br/>Just type a message, or use the mic to talk. Let's get started! 🚀</p>
+          </div>
+        </div>
       </div>
     </div>
     <div id="chat"></div>
   </div>
-  <footer>
-    <button class="attach" id="btnAttach" type="button" title="Attach">📎</button>
-    <button class="mic" id="btnMic" type="button" title="Voice">🎤</button>
-    <input id="input" placeholder="Message D4AI..." autocomplete="off" enterkeyhint="send"/>
-    <button class="fab" id="btnSend" type="button" title="Send"><img src="file:///android_asset/d4ai_logo.png" alt="send"/></button>
-  </footer>
-</div>
-<div id="drawer">
-  <div class="panel">
-    <div class="head">
-      <img src="file:///android_asset/d4ai_logo.png" width="40" height="40" style="border-radius:50%"/>
-      <div style="flex:1">
-        <div style="font-weight:700">D4AI</div>
-        <div style="font-size:11px;color:var(--ok)">● Online · v5-Ultimate</div>
-      </div>
-      <button class="icon-btn" id="btnClose" type="button">✕</button>
+  <div id="composer-wrap">
+    <div id="composer">
+      <button class="tool" id="btnAttach" title="Attach">📎</button>
+      <input id="input" type="text" placeholder="Message D4AI..." autocomplete="off" enterkeyhint="send"/>
+      <button class="tool" id="btnMic" title="Voice">🎤</button>
+      <button class="send" id="btnSend" title="Send">➤</button>
     </div>
-    <button class="new" id="btnNew" type="button">＋  New Chat</button>
-    <div class="item" data-act="history">🕐  Chat History</div>
-    <div class="item" data-act="tools">🔧  Tools &amp; Integrations</div>
-    <div class="item" data-act="voice">📞  Voice &amp; Call</div>
-    <div class="item" data-act="settings">⚙️  Settings</div>
-    <div class="item" data-act="about">ℹ  About D4AI</div>
-    <div class="item" data-act="apikey">🔑  AI API key (unlimited)</div>
-    <div class="sec">QUICK ACTIONS</div>
-    <div class="item" data-act="clear">🗑  Clear Chat</div>
-    <div class="item" data-act="theme">🌙  Dark Mode</div>
-    <div class="item" data-act="wake">▶  Wake D4AI</div>
-    <div class="item" data-act="sleep">⏸  Sleep D4AI</div>
-    <div class="item" data-act="assist">🎙  Set as assistant</div>
-    <div class="item" data-act="exit">↗  Exit</div>
-    <div style="margin-top:24px;text-align:center;font-size:11px;color:var(--muted)">D4AI · Creating Solutions. Innovating Lives.</div>
   </div>
+  <nav id="nav">
+    <button class="on" data-tab="home"><span>⌂</span>Home</button>
+    <button data-tab="chat"><span>💬</span>Chat</button>
+    <button data-tab="tools"><span>✦</span>Tools</button>
+    <button data-tab="settings"><span>⚙</span>Settings</button>
+  </nav>
 </div>
-<script>
-const $ = (id)=>document.getElementById(id);
-const chat=$('chat'), welcome=$('welcome'), input=$('input'), status=$('status'), mic=$('btnMic');
-let autoTalk=true, busy=false;
 
-function setStatus(msg){ if(!msg){status.style.display='none';status.textContent='';return;} status.style.display='block';status.textContent=msg; }
-function showChat(){ welcome.style.display='none'; chat.style.display='flex'; }
-function addBubble(role, text, typing){
-  showChat();
-  const row=document.createElement('div'); row.className='row '+(role==='user'?'user':'ai');
-  if(role!=='user'){ const img=document.createElement('img'); img.className='av'; img.src='file:///android_asset/d4ai_logo.png'; row.appendChild(img); }
-  const b=document.createElement('div'); b.className='bubble';
-  if(typing){ b.innerHTML='<span class="typing"><i></i><i></i><i></i></span>'; }
-  else b.textContent=text;
-  row.appendChild(b); chat.appendChild(row);
-  $('main').scrollTop=$('main').scrollHeight;
-  return b;
-}
-async function sendText(text){
-  text=(text||'').trim(); if(!text||busy) return;
-  busy=true; addBubble('user', text); input.value='';
-  const bubble=addBubble('ai','',true);
-  try{
-    let answer;
-    if(window.D4AI&&window.D4AI.ask){
-      answer=await new Promise((resolve,reject)=>{
-        window._d4aiAskCb=(ok,msg)=>ok?resolve(msg):reject(new Error(msg));
-        window.D4AI.ask(text);
-      });
-    } else answer='D4AI native bridge not ready. Rebuild/reinstall the app.';
-    bubble.textContent=answer;
-    if(autoTalk&&window.D4AI&&window.D4AI.speak) window.D4AI.speak(answer);
-  }catch(e){ bubble.textContent=e.message||'Something went wrong.'; }
-  busy=false; $('main').scrollTop=$('main').scrollHeight;
-}
-$('btnSend').onclick=()=>sendText(input.value);
-input.addEventListener('keydown',e=>{ if(e.key==='Enter') sendText(input.value); });
-$('btnAuto').onclick=function(){ autoTalk=!autoTalk; this.textContent=autoTalk?'Auto-talk On':'Auto-talk'; };
-mic.onclick=()=>{
-  if(!(window.D4AI&&window.D4AI.listen)) return;
-  mic.classList.add('on'); setStatus('D4AI listening…');
-  window.D4AI.listen();
-};
-window.onD4AIHeard=(t)=>{ mic.classList.remove('on'); setStatus(''); if(t) sendText(t); };
-window.onD4AIStatus=(m)=>{ setStatus(m||''); if(m&&/listen/i.test(m)) mic.classList.add('on'); else mic.classList.remove('on'); };
-const drawer=$('drawer');
-$('btnMenu').onclick=()=>drawer.classList.add('open');
-$('btnClose').onclick=()=>drawer.classList.remove('open');
-drawer.onclick=e=>{ if(e.target===drawer) drawer.classList.remove('open'); };
-function resetChat(){ chat.innerHTML=''; chat.style.display='none'; welcome.style.display='flex'; drawer.classList.remove('open'); }
-$('btnNew').onclick=resetChat;
-document.querySelectorAll('#drawer .item').forEach(el=>{
-  el.onclick=()=>{
-    const a=el.getAttribute('data-act'); drawer.classList.remove('open');
-    if(a==='clear'||a==='history') resetChat();
-    if(a==='wake'&&window.D4AI) window.D4AI.wake();
-    if(a==='sleep'&&window.D4AI) window.D4AI.sleep();
-    if(a==='assist'&&window.D4AI) window.D4AI.openAssistSettings();
-    if(a==='voice'){ mic.classList.add('on'); setStatus('D4AI listening…'); if(window.D4AI) window.D4AI.listen(); }
-    if(a==='apikey'){ const k=prompt('Paste Pollinations sk_ key from enter.pollinations.ai (optional, for unlimited):',''); if(k!==null && window.D4AI && window.D4AI.setApiKey) window.D4AI.setApiKey(k); addBubble('ai', k ? 'API key saved. Replies should be unlimited.' : 'Key cleared. Using free public endpoints.'); }
-    if(a==='about') addBubble('ai',"I'm D4AI by D4TECH — Creating Solutions, Innovating Lives.\nCreator: Amurun Destiny O.");
-    if(a==='tools') addBubble('ai','Tools: open apps, call, volume, brightness, flashlight, mute — try “open WhatsApp” or “volume up”.');
-    if(a==='settings') addBubble('ai','Use Auto-talk in the header. Set D4AI as assistant in system settings for Home long-press.');
-    if(a==='exit'&&window.D4AI&&window.D4AI.sleep) window.D4AI.sleep();
+<div id="drawer-bg"></div>
+<aside id="drawer">
+  <div class="head">
+    <img src="../d4ai_logo.png" alt="" onerror="this.style.display='none'"/>
+    <div>
+      <div style="font-weight:700">D4AI</div>
+      <div style="font-size:11px;color:var(--ok)">● Online · v5-Ultimate</div>
+    </div>
+  </div>
+  <button class="item primary" data-act="new">➕ New Chat</button>
+  <button class="item" data-act="history">🕒 Chat History</button>
+  <button class="item" data-act="tools">✦ Tools & Integrations</button>
+  <button class="item" data-act="voice">📞 Voice & Call</button>
+  <button class="item" data-act="settings">⚙ Settings</button>
+  <button class="item" data-act="about">ℹ About D4AI</button>
+  <div class="sec">Quick Actions</div>
+  <button class="item" data-act="clear">🗑 Clear Chat</button>
+  <button class="item" data-act="wake">☀ Wake D4AI</button>
+  <button class="item" data-act="sleep">🌙 Sleep D4AI</button>
+  <button class="item" data-act="theme">🌓 Dark/Light Mode <span class="toggle">●</span></button>
+  <button class="item" data-act="help">? Help & Support</button>
+  <button class="item" data-act="exit" style="color:#f87171;margin-top:8px">⤴ Exit</button>
+</aside>
+
+<div id="history">
+  <header>
+    <button class="icon-btn" id="histBack">←</button>
+    <div class="meta"><h1>Chat History</h1></div>
+    <button class="icon-btn">⋮</button>
+  </header>
+  <div class="search">🔍 <input id="histSearch" placeholder="Search conversations..."/></div>
+  <div class="list" id="histList"></div>
+</div>
+
+<div id="sheet-bg"></div>
+<div id="sheet"></div>
+
+<script>
+(function(){
+  const $ = (s)=>document.querySelector(s);
+  const chat = $('#chat'), welcome = $('#welcome'), input = $('#input');
+  const LOGO = '../d4ai_logo.png';
+  let history = JSON.parse(localStorage.getItem('d4ai_chats')||'[]');
+  let current = { id: Date.now(), title: 'New chat', messages: [] };
+  let autoTalk = true;
+
+  function timeNow(){
+    const d=new Date(); return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }
+  function showChat(){
+    welcome.style.display='none';
+    chat.classList.add('show');
+  }
+  function addBubble(role, text, opts){
+    showChat();
+    const row = document.createElement('div');
+    row.className = 'msg ' + (role==='user'?'user':'ai');
+    const body = document.createElement('div');
+    if(role==='ai'){
+      const av=document.createElement('img'); av.className='av'; av.src=LOGO; av.onerror=()=>av.remove();
+      row.appendChild(av);
+    }
+    const bub=document.createElement('div'); bub.className='bubble';
+    bub.textContent = text;
+    const tm=document.createElement('div'); tm.className='time'; tm.textContent=timeNow();
+    body.appendChild(bub); body.appendChild(tm);
+    if(role==='ai' && text && !opts?.noActions){
+      const act=document.createElement('div'); act.className='actions';
+      act.innerHTML = '<button data-a="speak">🔊</button><button data-a="copy">📋</button><button data-a="up">👍</button><button data-a="down">👎</button><button data-a="more">⋮</button>';
+      act.onclick = (e)=>{
+        const a=e.target.getAttribute('data-a'); if(!a) return;
+        if(a==='copy'){ try{navigator.clipboard.writeText(text)}catch(_){ } }
+        if(a==='speak' && window.D4AI && window.D4AI.speak) window.D4AI.speak(text);
+        if(a==='more') openSheet('ai', text);
+      };
+      body.appendChild(act);
+    }
+    if(role==='user'){
+      bub.onclick = ()=> openSheet('user', text);
+    }
+    row.appendChild(body);
+    chat.appendChild(row);
+    chat.parentElement.scrollTop = chat.parentElement.scrollHeight;
+    current.messages.push({role, text, t: Date.now()});
+    if(role==='user' && current.messages.filter(m=>m.role==='user').length===1){
+      current.title = text.slice(0,48);
+    }
+    persist();
+  }
+  function persist(){
+    const idx = history.findIndex(h=>h.id===current.id);
+    if(idx>=0) history[idx]=current; else history.unshift(current);
+    history = history.slice(0,40);
+    localStorage.setItem('d4ai_chats', JSON.stringify(history));
+  }
+  function setTyping(on){
+    let el = document.getElementById('typingRow');
+    if(on){
+      showChat();
+      if(!el){
+        el=document.createElement('div'); el.id='typingRow'; el.className='typing on';
+        el.innerHTML = '<img class="av" src="'+LOGO+'" onerror="this.remove()"/><div class="dots"><i></i><i></i><i></i></div>';
+        chat.appendChild(el);
+      } else el.className='typing on';
+      chat.parentElement.scrollTop = chat.parentElement.scrollHeight;
+    } else if(el) el.remove();
+  }
+  window.onD4AITyping = setTyping;
+  window.onD4AIStatus = function(s){
+    const st=$('#status'); if(!s){st.style.display='none'; return;}
+    st.style.display='block'; st.textContent=s;
   };
-});
+  window.onD4AIHeard = function(text){
+    if(!text) return;
+    input.value = text;
+    send();
+  };
+  window._d4aiAskCb = function(ok, msg){
+    setTyping(false);
+    if(msg) addBubble('ai', msg);
+  };
+
+  function send(){
+    const q = (input.value||'').trim();
+    if(!q) return;
+    input.value='';
+    addBubble('user', q);
+    setTyping(true);
+    if(window.D4AI && window.D4AI.ask){
+      window.D4AI.ask(q);
+    } else {
+      setTyping(false);
+      addBubble('ai', 'Native bridge not ready. Restart the app.');
+    }
+  }
+
+  $('#btnSend').onclick = send;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
+  $('#btnMic').onclick = ()=>{
+    if(window.D4AI && window.D4AI.listen) window.D4AI.listen();
+    else if(window.D4AI && window.D4AI.wake) window.D4AI.wake();
+  };
+
+  // Drawer
+  function openDrawer(on){
+    $('#drawer').classList.toggle('on', on);
+    $('#drawer-bg').classList.toggle('on', on);
+  }
+  $('#btnMenu').onclick = ()=> openDrawer(true);
+  $('#drawer-bg').onclick = ()=> openDrawer(false);
+  $('#drawer').onclick = (e)=>{
+    const act = e.target.closest('[data-act]'); if(!act) return;
+    const a = act.getAttribute('data-act');
+    openDrawer(false);
+    if(a==='new'){ current={id:Date.now(),title:'New chat',messages:[]}; chat.innerHTML=''; welcome.style.display='flex'; chat.classList.remove('show'); }
+    if(a==='history'){ renderHistory(); $('#history').classList.add('on'); }
+    if(a==='clear'){ chat.innerHTML=''; current.messages=[]; welcome.style.display='flex'; chat.classList.remove('show'); persist(); }
+    if(a==='wake' && window.D4AI && window.D4AI.wake) window.D4AI.wake();
+    if(a==='sleep' && window.D4AI && window.D4AI.sleep) window.D4AI.sleep();
+    if(a==='about') addBubble('ai', "I'm D4AI by D4TECH — Creating Solutions, Innovating Lives.\\nCreator: Amurun Destiny O.\\nVersion: v5-Ultimate.");
+    if(a==='tools') addBubble('ai', 'Tools: open apps, call, volume, brightness, flashlight, mute, Wi‑Fi, search — try “open WhatsApp” or “what is mathematics”.');
+    if(a==='voice'){ if(window.D4AI && window.D4AI.listen) window.D4AI.listen(); }
+    if(a==='settings') addBubble('ai', 'Settings: Auto-talk is on. Use Wake / Sleep in this menu. Set D4AI as assistant for Home long-press.');
+    if(a==='help') addBubble('ai', 'Say “Hey D4AI” to wake. After 15 seconds of silence I go to sleep. Ask any question or give phone commands.');
+    if(a==='exit' && window.D4AI && window.D4AI.sleep) window.D4AI.sleep();
+    if(a==='theme'){ document.body.style.filter = document.body.style.filter ? '' : 'invert(0.92) hue-rotate(180deg)'; }
+  };
+
+  function renderHistory(){
+    const list = $('#histList'); list.innerHTML='';
+    history.forEach(h=>{
+      const d=document.createElement('div'); d.className='hitem';
+      d.innerHTML = '<div class="ic">💬</div><div><div class="t"></div><div class="s"></div></div>';
+      d.querySelector('.t').textContent = h.title || 'Chat';
+      d.querySelector('.s').textContent = (h.messages&&h.messages[0]&&h.messages[0].text||'').slice(0,60);
+      d.onclick = ()=>{
+        current = h;
+        chat.innerHTML='';
+        (h.messages||[]).forEach(m=> {
+          // rebuild without double-persist
+          const row=document.createElement('div'); row.className='msg '+(m.role==='user'?'user':'ai');
+          const body=document.createElement('div');
+          if(m.role==='ai'){ const av=document.createElement('img'); av.className='av'; av.src=LOGO; row.appendChild(av); }
+          const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=m.text; body.appendChild(bub); row.appendChild(body); chat.appendChild(row);
+        });
+        showChat();
+        $('#history').classList.remove('on');
+      };
+      list.appendChild(d);
+    });
+  }
+  $('#histBack').onclick = ()=> $('#history').classList.remove('on');
+
+  function openSheet(kind, text){
+    const sheet=$('#sheet'), bg=$('#sheet-bg');
+    if(kind==='user'){
+      sheet.innerHTML = '<button data-x="copy">📋 Copy</button><button data-x="edit">✎ Edit (your message)</button><button data-x="resend">↻ Resend</button><button class="danger" data-x="del">🗑 Delete</button>';
+    } else {
+      sheet.innerHTML = '<button data-x="copy">📋 Copy</button><button data-x="speak">🔊 Speak (Text to Speech)</button><button data-x="share">↗ Share</button><button class="danger" data-x="report">⚑ Report</button>';
+    }
+    sheet.classList.add('on'); bg.classList.add('on');
+    sheet.onclick = (e)=>{
+      const x=e.target.getAttribute('data-x'); if(!x) return;
+      if(x==='copy') try{navigator.clipboard.writeText(text)}catch(_){}
+      if(x==='speak' && window.D4AI && window.D4AI.speak) window.D4AI.speak(text);
+      if(x==='resend'){ input.value=text; send(); }
+      if(x==='edit'){ input.value=text; input.focus(); }
+      sheet.classList.remove('on'); bg.classList.remove('on');
+    };
+    bg.onclick = ()=>{ sheet.classList.remove('on'); bg.classList.remove('on'); };
+  }
+
+  // Bottom nav
+  document.querySelectorAll('#nav button').forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      const tab=b.getAttribute('data-tab');
+      if(tab==='home'){ welcome.style.display='flex'; chat.classList.remove('show'); }
+      if(tab==='chat'){ showChat(); }
+      if(tab==='tools'){ openDrawer(true); }
+      if(tab==='settings'){ addBubble('ai','Settings: use the menu ☰ for Wake, Sleep, History, and About.'); }
+    };
+  });
+})();
 </script>
 </body>
 </html>

@@ -142,20 +142,20 @@ class MainActivity : AppCompatActivity() {
                             deliver(true, r.prompt)
                         }
                         RouteResult.NotCommand -> {
-                            val thinking = listOf(
-                                "One moment…",
-                                "Thinking…",
-                                "Let me check…",
-                                "Working on that…",
-                                "Hmm, give me a second…",
-                            ).random()
                             runOnUiThread {
-                                speech.speak(thinking, listenAfter = false)
-                                deliver(true, thinking)
+                                eval("if(window.onD4AITyping)window.onD4AITyping(true)")
                             }
-                            val answer = PollinationsClient.ask(message)
-                            speech.speak(answer, listenAfter = false)
-                            deliver(true, answer)
+                            val answer = try {
+                                PollinationsClient.ask(message)
+                            } catch (e: Exception) {
+                                e.message ?: PollinationsClient.offlineReply()
+                            }
+                            val out = if (answer.isBlank()) PollinationsClient.offlineReply() else answer
+                            runOnUiThread {
+                                eval("if(window.onD4AITyping)window.onD4AITyping(false)")
+                            }
+                            speech.speak(out, listenAfter = false)
+                            deliver(true, out)
                         }
                     }
                 } catch (e: Exception) {

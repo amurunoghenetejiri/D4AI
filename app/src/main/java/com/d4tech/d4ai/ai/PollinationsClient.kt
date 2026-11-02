@@ -67,6 +67,39 @@ object PollinationsClient {
     }
 
     /** Spoken when network/brain is unavailable. */
+
+    /** Plain-text Pollinations GET — works without API key. */
+    private fun simpleGetAnswer(userMessage: String): String? {
+        val name = try { MemoryStore.userName() } catch (_: Exception) { "" }
+        val prompt = buildString {
+            append("You are D4AI by D4TECH (Amurun Destiny). Motto: Creating Solutions, Innovating Lives. ")
+            append("Answer clearly and completely in your own words. Never say you are ChatGPT. ")
+            if (name.isNotBlank()) append("User name: ").append(name).append(". ")
+            append("Question: ").append(userMessage.take(1200))
+        }
+        val models = listOf("openai", "openai-large", "gemini", "mistral")
+        for (model in models) {
+            try {
+                val url = "https://text.pollinations.ai/" +
+                    java.net.URLEncoder.encode(prompt, "UTF-8") +
+                    "?model=$model&nologo=true"
+                val req = okhttp3.Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "D4AI/1.0")
+                    .get()
+                    .build()
+                http.newCall(req).execute().use { res ->
+                    val body = res.body?.string()?.trim().orEmpty()
+                    if (res.isSuccessful && body.isNotBlank() && !isRateLimitText(body)) {
+                        return body
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
     fun offlineReply(): String {
         val name = try {
             com.d4tech.d4ai.memory.MemoryStore.userName().ifBlank { "boss" }
@@ -85,6 +118,18 @@ object PollinationsClient {
 
     suspend fun ask(userMessage: String): String = withContext(Dispatchers.IO) {
         MemoryStore.addChat("user", userMessage)
+
+        // Fast free GET path first (most reliable for plain Q&A on phone networks)
+        try {
+            val simple = simpleGetAnswer(userMessage)
+            if (!simple.isNullOrBlank() && !isRateLimitText(simple) && simple.length > 8) {
+                val clean = sanitize(simple)
+                MemoryStore.addChat("assistant", clean)
+                return@withContext clean
+            }
+        } catch (_: Exception) {
+        }
+
         // Prefer D4AIBrain (openai-large / reasoning / gemini / claude-hybrid)
         try {
             val guide = userMessage.lowercase().let { l ->
