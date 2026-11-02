@@ -17,22 +17,34 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.LinearInterpolator
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 
 /**
  * Floating D4AI bubble shown over other apps while the assistant is awake —
  * long-press Home / long-press earpod wakes D4AI without opening the app.
  *
- * The little robot's mouth moves while D4AI talks, and a cyan ring pulses
- * while it listens. Needs "Display over other apps" granted once.
+ * The floating animation IS the app logo: the neon D4AI robot on a fully
+ * transparent background.
+ *  - Idle:       the robot gently floats (slow bob).
+ *  - Listening:  a cyan ring pulses outward around the logo.
+ *  - Speaking:   the logo bounces and glows brighter while equalizer bars
+ *                dance beside it.
+ *
+ * Needs "Display over other apps" granted once.
  */
 object BubbleOverlay {
 
-    private var container: LinearLayout? = null
-    private var face: FaceView? = null
-    private var label: TextView? = null
+    private var container: FrameLayout? = null
+    private var logoView: ImageView? = null
+    private var glowView: GlowView? = null
+    private var barsView: BarsView? = null
+    private var phase = 0f
+
+    private val main = Handler(Looper.getMainLooper())
+    private var animator: ValueAnimator? = null
 
     fun canShow(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -64,30 +76,24 @@ object BubbleOverlay {
             return
         }
         try {
-            val faceView = FaceView(ctx)
-            val text = TextView(ctx).apply {
-                text = "D4AI"
-                setTextColor(Color.WHITE)
-                textSize = 12f
-                isAllCaps = true
-                letterSpacing = 0.12f
+            val size = (76 * ctx.resources.displayMetrics.density).toInt()
+
+            val glow = GlowView(ctx)
+            val logo = ImageView(ctx).apply {
+                setImageResource(com.d4tech.d4ai.R.drawable.d4ai_logo)
+                scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            val box = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(26, 14, 30, 14)
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.parseColor("#E6050b18"))
-                    cornerRadius = 60f
-                    setStroke(2, Color.parseColor("#3b82f6"))
-                }
-                addView(faceView, LinearLayout.LayoutParams(70, 70).apply { gravity = Gravity.CENTER_VERTICAL })
-                addView(
-                    TextView(ctx).apply { setText("  ") },
-                    LinearLayout.LayoutParams(10, 1),
-                )
-                addView(text)
+            val bars = BarsView(ctx)
+
+            val root = FrameLayout(ctx).apply {
+                addView(glow, FrameLayout.LayoutParams((size * 2.6f).toInt(), (size * 2.6f).toInt(), Gravity.CENTER))
+                addView(logo, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
+                addView(bars, FrameLayout.LayoutParams(
+                    (size * 1.15f).toInt(), (size * 0.55f).toInt(),
+                    Gravity.CENTER or Gravity.END,
+                ).apply { marginEnd = -(size * 0.55f).toInt() })
             }
+
             val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -99,30 +105,36 @@ object BubbleOverlay {
                 PixelFormat.TRANSLUCENT,
             )
             params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            params.y = 90
-            wm.addView(box, params)
-            container = box
-            face = faceView
-            label = text
+            params.y = 40
+            wm.addView(root, params)
+
+            container = root
+            logoView = logo
+            glowView = glow
+            barsView = bars
+
+            startLoop()
         } catch (_: Exception) {
         }
     }
 
     fun setSpeaking(speaking: Boolean) {
-        face?.setSpeaking(speaking)
-        label?.text = if (speaking) "D4AI…" else "D4AI"
+        barsView?.speaking = speaking
+        glowView?.speaking = speaking
     }
 
     fun setListening(listening: Boolean) {
-        face?.setListening(listening)
+        glowView?.listening = listening
     }
 
     fun hide() {
         val v = container ?: return
+        animator?.cancel()
+        animator = null
         container = null
-        face = null
-        label = null
-        face?.stop()
+        logoView = null
+        glowView = null
+        barsView = null
         try {
             val wm = v.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm.removeView(v)
@@ -130,110 +142,116 @@ object BubbleOverlay {
         }
     }
 
-    /**
-     * The little D4AI robot: dark round face, two eyes, mouth that opens and
-     * closes while speaking, cyan pulse ring while listening.
-     */
-    private class FaceView(context: Context) : View(context) {
-
-        private val main = Handler(Looper.getMainLooper())
-        private var speaking = false
-        private var listening = false
-        private var phase = 0f
-        private var running = false
-
-        private val facePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#0e2038")
-            style = Paint.Style.FILL
+    private fun startLoop() {
+        if (animator != null) return
+        val anim = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat())
+        anim.duration = 2600
+        anim.repeatCount = ValueAnimator.INFINITE
+        anim.interpolator = AccelerateDecelerateInterpolator()
+        anim.addUpdateListener {
+            phase = it.animatedValue as Float
+            render()
         }
+        anim.start()
+        animator = anim
+    }
+
+    private fun render() {
+        val v = container ?: return
+        val logo = logoView ?: return
+        val glow = glowView ?: return
+        val bars = barsView ?: return
+
+        val speaking = glow.speaking
+        val listening = glow.listening
+
+        // Idle float — gentle bob, slightly bigger bounce while talking
+        val amp = if (speaking) 0.10f else 0.05f
+        val bob = (Math.sin(phase.toDouble()) * amp).toFloat()
+        val scale = if (speaking) 1f + (Math.sin(phase * 4.0).toFloat() * 0.06f) else 1f + bob * 0.4f
+        logo.translationY = bob * v.resources.displayMetrics.density * 8f
+        logo.scaleX = scale
+        logo.scaleY = scale
+        logo.alpha = if (speaking) 1f else 0.92f + bob * 0.5f
+
+        glow.phase = phase
+        bars.phase = phase
+        bars.invalidate()
+        glow.invalidate()
+    }
+
+    /** Soft glow + expanding pulse ring drawn behind the logo. */
+    private class GlowView(context: Context) : View(context) {
+
+        var speaking = false
+        var listening = false
+        var phase = 0f
+
         private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#3b82f6")
             style = Paint.Style.STROKE
-            strokeWidth = 4f
         }
-        private val pulsePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 5f
-        }
-        private val eyePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-        }
-        private val mouthPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#22d3ee")
-            style = Paint.Style.FILL
-        }
-
-        fun setSpeaking(on: Boolean) {
-            speaking = on
-            if (on) start() else main.post { invalidate() }
-        }
-
-        fun setListening(on: Boolean) {
-            listening = on
-            if (on) start() else main.post { invalidate() }
-        }
-
-        fun stop() {
-            running = false
-            main.removeCallbacksAndMessages(null)
-        }
-
-        private fun start() {
-            if (running) return
-            running = true
-            val animator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat())
-            animator.duration = 900
-            animator.repeatCount = ValueAnimator.INFINITE
-            animator.interpolator = LinearInterpolator()
-            animator.addUpdateListener {
-                phase = it.animatedValue as Float
-                invalidate()
-            }
-            animator.start()
         }
 
         override fun onDraw(canvas: Canvas) {
+            val cx = width / 2f
+            val cy = height / 2f
+            val base = minOf(width, height) / 2f - 10f
+
+            // breathing glow
+            val breathe = ((Math.sin(phase.toDouble()) + 1.0) / 2.0).toFloat()
+            val glowR = base * (0.85f + breathe * 0.08f)
+            val glowColor = if (speaking) Color.parseColor("#8822d3ee") else Color.parseColor("#443b82f6")
+            glowPaint.shader = RadialGradient(cx, cy, glowR, glowColor, Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, glowR, glowPaint)
+
+            // listening pulse — ring expanding outward
+            if (listening) {
+                val t = ((Math.sin(phase * 1.6) + 1.0) / 2.0)
+                val r = base * (0.55f + t * 0.45f)
+                val alpha = ((1.0 - t) * 190).toInt()
+                ringPaint.color = Color.argb(alpha, 34, 211, 238)
+                ringPaint.strokeWidth = 4f * density
+                canvas.drawCircle(cx, cy, r, ringPaint)
+
+                val t2 = ((Math.sin(phase * 1.6 + 1.9) + 1.0) / 2.0)
+                val r2 = base * (0.55f + t2 * 0.45f)
+                ringPaint.color = Color.argb(((1.0 - t2) * 140).toInt(), 59, 130, 246)
+                ringPaint.strokeWidth = 3f * density
+                canvas.drawCircle(cx, cy, r2, ringPaint)
+            }
+        }
+
+        private val density get() = context.resources.displayMetrics.density
+    }
+
+    /** Dancing equalizer bars shown while D4AI talks. */
+    private class BarsView(context: Context) : View(context) {
+
+        var speaking = false
+        var phase = 0f
+
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.parseColor("#22d3ee")
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (!speaking) return
             val w = width.toFloat()
             val h = height.toFloat()
-            val cx = w / 2f
-            val cy = h / 2f
-            val r = minOf(w, h) / 2f - 8f
-
-            if (listening) {
-                pulsePaint.shader = RadialGradient(cx, cy, r + 10, Color.parseColor("#3322d3ee"), Color.TRANSPARENT, Shader.TileMode.CLAMP)
-                val pulse = ((Math.sin(phase.toDouble()) + 1.0) / 2.0).toFloat()
-                canvas.drawCircle(cx, cy, r + 4 + pulse * 6, pulsePaint)
+            val n = 4
+            val bw = w / n * 0.45f
+            val gap = w / n
+            paint.maskFilter = null
+            for (i in 0 until n) {
+                val amp = ((Math.sin(phase * 5.0 + i * 1.4) + 1.0) / 2.0)
+                val bh = h * (0.25f + amp * 0.75f)
+                val x = i * gap + (gap - bw) / 2f
+                paint.color = if (i % 2 == 0) Color.parseColor("#22d3ee") else Color.parseColor("#c084fc")
+                canvas.drawRoundRect(x, (h - bh) / 2f, x + bw, (h + bh) / 2f, bw / 2f, bw / 2f, paint)
             }
-            ringPaint.color = if (speaking) Color.parseColor("#22d3ee") else Color.parseColor("#3b82f6")
-            canvas.drawCircle(cx, cy, r, ringPaint)
-            canvas.drawCircle(cx, cy, r - 3, facePaint)
-
-            // eyes
-            val eyeR = r * 0.11f
-            val eyeY = cy - r * 0.25f
-            val eyeDx = r * 0.38f
-            canvas.drawCircle(cx - eyeDx, eyeY, eyeR, eyePaint)
-            canvas.drawCircle(cx + eyeDx, eyeY, eyeR, eyePaint)
-
-            // mouth
-            if (speaking) {
-                val open = ((Math.sin(phase * 3.0) + 1.0) / 2.0).toFloat() // 0..1 talking flap
-                val mouthH = r * (0.08f + open * 0.30f)
-                val mouthW = r * 0.55f
-                val rect = android.graphics.RectF(cx - mouthW / 2, cy + r * 0.05f, cx + mouthW / 2, cy + r * 0.05f + mouthH)
-                canvas.drawRoundRect(rect, mouthH / 2f, mouthH / 2f, mouthPaint)
-            } else {
-                val rect = android.graphics.RectF(
-                    cx - r * 0.28f,
-                    cy + r * 0.18f,
-                    cx + r * 0.28f,
-                    cy + r * 0.34f,
-                )
-                canvas.drawRoundRect(rect, r * 0.12f, r * 0.12f, mouthPaint)
-            }
-
-            if (running) main.postDelayed({ invalidate() }, 33)
         }
     }
 }
