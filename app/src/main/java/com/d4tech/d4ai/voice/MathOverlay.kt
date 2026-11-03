@@ -33,6 +33,7 @@ object MathOverlay {
         steps: List<String>,
         answer: String,
         holdMs: Long = 18_000L,
+        graph: android.graphics.Bitmap? = null,
     ) {
         val ctx = context.applicationContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) return
@@ -163,6 +164,21 @@ object MathOverlay {
                     layoutParams = lp
                 }
                 right.addView(ans)
+
+                if (graph != null) {
+                    val img = ImageView(ctx).apply {
+                        setImageBitmap(graph)
+                        adjustViewBounds = true
+                        val lp = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            dp(180),
+                        )
+                        lp.topMargin = dp(8)
+                        layoutParams = lp
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    right.addView(img)
+                }
 
                 card.addView(left)
                 card.addView(right)

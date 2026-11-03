@@ -176,6 +176,7 @@ class CommandRouter(private val context: Context) {
                         equation = r.equation,
                         steps = r.steps,
                         answer = r.answer,
+                        graph = r.graph,
                     )
                 } catch (_: Exception) {
                 }

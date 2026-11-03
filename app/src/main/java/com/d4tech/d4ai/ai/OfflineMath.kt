@@ -60,10 +60,19 @@ object OfflineMath {
         // Unit conversion
         convert(lower)?.let { return it }
 
-        // Constant
-        if (lower.matches(Regex("""(?:what(?:\s+is)?\s+)?(?:value\s+of\s+)?(pi|π|e|phi|g|c)\??"""))) {
-            val key = Regex("""(pi|π|e|phi|g|c)""").find(lower)!!.groupValues[1]
-            val v = CONST[key] ?: return null
+        // Constant — STRICT only (never match bare "e" inside other text)
+        if (lower.matches(Regex("""(?:what(?:\s+is)?\s+)?(?:value\s+of\s+)?(pi|π|phi|g|c)\??"""))
+            || lower.matches(Regex("""what\s+is\s+e\??"""))
+            || lower.matches(Regex("""value\s+of\s+e\??"""))
+        ) {
+            val key = when {
+                "phi" in lower -> "phi"
+                lower.matches(Regex("""what\s+is\s+e\??""")) || lower.matches(Regex("""value\s+of\s+e\??""")) -> "e"
+                "g" in lower && "pi" !in lower -> "g"
+                Regex("""\bc\b""").containsMatchIn(lower) && "pi" !in lower -> "c"
+                else -> "pi"
+            }
+            val v = CONST[key] ?: Math.E
             return Result(
                 "The value of $key is ${speakNumber(v)}",
                 "Constant $key",
