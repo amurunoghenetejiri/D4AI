@@ -51,6 +51,9 @@ class SpeechEngine(
     @Volatile var isListening: Boolean = false
         private set
 
+    /** When true, allow mic even if music is active (e.g. user just woke D4AI to say next). */
+    @Volatile var forceListenThroughMusic: Boolean = false
+
     fun init(onReady: () -> Unit = {}) {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS

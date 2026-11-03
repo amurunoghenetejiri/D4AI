@@ -131,7 +131,74 @@ object OfflineMath {
             return Result("Absolute value of ${speakNumber(a)} is ${speakNumber(r)}", "|${formatNum(a)}| = ${formatNum(r)}", listOf("|${formatNum(a)}| = ${formatNum(r)}"))
         }
 
-        // Simple expression with BODMAS via recursive descent on normalized string
+
+        // Derivative dy/dx of simple polynomials: d/dx (ax^n) = n*a*x^(n-1)
+        Regex("""(?i)(?:derivative|differentiate|d/dx|dy/dx|d\s*y\s*/\s*d\s*x)\s*(?:of\s*)?(.+)""").find(lower)?.let {
+            val expr = it.groupValues[1].trim()
+            return differentiate(expr)
+        }
+        if (lower.contains("dy") && lower.contains("dx")) {
+            val expr = lower.replace("dy/dx", "").replace("dy dx", "").replace("of", "").trim()
+            if (expr.isNotBlank()) differentiate(expr)?.let { return it }
+        }
+
+        // Integral of simple polynomials: ∫ ax^n dx = a/(n+1) x^(n+1) + C
+        Regex("""(?i)(?:integral|integrate|∫)\s*(?:of\s*)?(.+?)(?:\s+d\s*x)?$""").find(lower)?.let {
+            val expr = it.groupValues[1].trim()
+            return integrate(expr)
+        }
+
+        // Limit as x approaches a
+        Regex("""(?i)limit\s+(?:as\s+)?x\s*(?:approaches|tends\s+to|→|->)\s*(-?\d+(?:\.\d+)?)\s+of\s+(.+)""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble()
+            val expr = it.groupValues[2].trim()
+            return limitAt(expr, a)
+        }
+
+        // Matrix 2x2 determinant: determinant of matrix a b c d / det [[a,b],[c,d]]
+        Regex("""(?i)(?:determinant|det)\s*(?:of\s*)?(?:matrix\s*)?(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            val c = it.groupValues[3].toDouble(); val d = it.groupValues[4].toDouble()
+            val det = a * d - b * c
+            return Result(
+                "Determinant is ${speakNumber(det)}",
+                "det = ${formatNum(a)}·${formatNum(d)} − ${formatNum(b)}·${formatNum(c)} = ${formatNum(det)}",
+                listOf("Matrix [[${formatNum(a)}, ${formatNum(b)}], [${formatNum(c)}, ${formatNum(d)}]]", "det = ad − bc = ${formatNum(det)}"),
+            )
+        }
+
+        // 2x2 inverse
+        Regex("""(?i)inverse\s*(?:of\s*)?(?:matrix\s*)?(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            val c = it.groupValues[3].toDouble(); val d = it.groupValues[4].toDouble()
+            val det = a * d - b * c
+            if (abs(det) < 1e-12) return Result("Matrix is singular; inverse does not exist.", "det = 0", listOf("det = 0 → no inverse"))
+            val ia = d / det; val ib = -b / det; val ic = -c / det; val id = a / det
+            return Result(
+                "Inverse matrix rows are ${speakNumber(ia)}, ${speakNumber(ib)} and ${speakNumber(ic)}, ${speakNumber(id)}",
+                "A⁻¹ = (1/${formatNum(det)}) · [[${formatNum(d)}, ${formatNum(-b)}], [${formatNum(-c)}, ${formatNum(a)}]]",
+                listOf("det = ${formatNum(det)}", "A⁻¹ = [[${formatNum(ia)}, ${formatNum(ib)}], [${formatNum(ic)}, ${formatNum(id)}]]"),
+            )
+        }
+
+        // Sum 1 to n
+        Regex("""(?i)(?:sum|add)\s*(?:from\s*)?1\s*(?:to|through)\s*(\d+)""").find(lower)?.let {
+            val n = it.groupValues[1].toInt()
+            val r = n.toLong() * (n + 1) / 2
+            return Result("Sum from 1 to $n is ${speakNumber(r.toDouble())}", "Σ = $r", listOf("n(n+1)/2 = $r"))
+        }
+
+        // Mean of numbers: average of 2 4 6
+        Regex("""(?i)(?:average|mean)\s+(?:of\s+)?([\d\s.,]+)""").find(lower)?.let {
+            val nums = it.groupValues[1].split(Regex("""[\s,]+""")).mapNotNull { s -> s.toDoubleOrNull() }
+            if (nums.isNotEmpty()) {
+                val r = nums.average()
+                return Result("Average is ${speakNumber(r)}", "mean = ${formatNum(r)}", listOf("(${nums.joinToString("+") { formatNum(it) }})/${nums.size} = ${formatNum(r)}"))
+            }
+        }
+
+
+                // Simple expression with BODMAS via recursive descent on normalized string
         val expr = normalizeExpr(lower) ?: return null
         return try {
             val steps = mutableListOf<String>()
@@ -362,6 +429,117 @@ object OfflineMath {
         while (ops.isNotEmpty()) apply()
         return output.single()
     }
+
+
+    private fun differentiate(raw: String): Result? {
+        val e = raw.lowercase()
+            .replace(" ", "")
+            .replace("squared", "^2")
+            .replace("cubed", "^3")
+            .replace("times", "*")
+        // ax^n
+        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
+            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "+" || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDouble() }
+            val n = it.groupValues[2].toDouble()
+            val newA = a * n
+            val newN = n - 1
+            val disp = when {
+                newN == 0.0 -> formatNum(newA)
+                newN == 1.0 -> "${formatNum(newA)}x"
+                else -> "${formatNum(newA)}x^${formatNum(newN)}"
+            }
+            return Result(
+                "The derivative is ${speakPoly(disp)}",
+                "d/dx [${formatNum(a)}x^${formatNum(n)}] = $disp",
+                listOf("Power rule: d/dx [xⁿ] = n·xⁿ⁻¹", "d/dx = $disp"),
+            )
+        }
+        Regex("""^(-?\d*\.?\d*)x$""").find(e)?.let {
+            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDoubleOrNull() ?: 1.0 }
+            return Result("The derivative is ${speakNumber(a)}", "d/dx [${formatNum(a)}x] = ${formatNum(a)}", listOf("d/dx [ax] = a = ${formatNum(a)}"))
+        }
+        Regex("""^(-?\d+(?:\.\d+)?)$""").find(e)?.let {
+            return Result("The derivative of a constant is zero", "d/dx [${it.groupValues[1]}] = 0", listOf("Constant rule → 0"))
+        }
+        // sin x, cos x, e^x, ln x
+        when {
+            e.contains("sinx") || e == "sin" -> return Result("Derivative of sine x is cosine x", "d/dx [sin x] = cos x", listOf("d/dx sin x = cos x"))
+            e.contains("cosx") || e == "cos" -> return Result("Derivative of cosine x is negative sine x", "d/dx [cos x] = −sin x", listOf("d/dx cos x = −sin x"))
+            e.contains("tanx") || e == "tan" -> return Result("Derivative of tangent x is secant squared x", "d/dx [tan x] = sec² x", listOf("d/dx tan x = sec² x"))
+            e.contains("e^x") || e == "expx" -> return Result("Derivative of e to the x is e to the x", "d/dx [eˣ] = eˣ", listOf("d/dx eˣ = eˣ"))
+            e.contains("lnx") || e.contains("logx") -> return Result("Derivative of ln x is one over x", "d/dx [ln x] = 1/x", listOf("d/dx ln x = 1/x"))
+        }
+        return Result(
+            "I can differentiate polynomials like 3x^4, ax, constants, sin x, cos x, e^x, and ln x offline.",
+            "Try: derivative of 3x^4",
+            listOf("Supported: axⁿ, sin, cos, tan, eˣ, ln x"),
+        )
+    }
+
+    private fun integrate(raw: String): Result? {
+        val e = raw.lowercase()
+            .replace(" ", "")
+            .replace("squared", "^2")
+            .replace("cubed", "^3")
+            .replace("dx", "")
+            .replace("times", "*")
+        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
+            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "+" || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDouble() }
+            val n = it.groupValues[2].toDouble()
+            val newN = n + 1
+            val newA = a / newN
+            val disp = "${formatNum(newA)}x^${formatNum(newN)} + C"
+            return Result(
+                "The integral is ${speakPoly(disp)}",
+                "∫ ${formatNum(a)}x^${formatNum(n)} dx = $disp",
+                listOf("Power rule: ∫ xⁿ dx = xⁿ⁺¹/(n+1) + C", disp),
+            )
+        }
+        Regex("""^(-?\d*\.?\d*)x$""").find(e)?.let {
+            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDoubleOrNull() ?: 1.0 }
+            val disp = "${formatNum(a / 2)}x² + C"
+            return Result("The integral is ${speakPoly(disp)}", "∫ ${formatNum(a)}x dx = $disp", listOf(disp))
+        }
+        Regex("""^(-?\d+(?:\.\d+)?)$""").find(e)?.let {
+            val a = it.groupValues[1].toDouble()
+            val disp = "${formatNum(a)}x + C"
+            return Result("The integral is ${speakPoly(disp)}", "∫ ${formatNum(a)} dx = $disp", listOf(disp))
+        }
+        when {
+            e.contains("sinx") -> return Result("Integral of sine x is negative cosine x plus C", "∫ sin x dx = −cos x + C", listOf("∫ sin x dx = −cos x + C"))
+            e.contains("cosx") -> return Result("Integral of cosine x is sine x plus C", "∫ cos x dx = sin x + C", listOf("∫ cos x dx = sin x + C"))
+            e.contains("e^x") -> return Result("Integral of e to the x is e to the x plus C", "∫ eˣ dx = eˣ + C", listOf("∫ eˣ dx = eˣ + C"))
+            e.contains("1/x") || e.contains("ln") -> return Result("Integral of one over x is ln absolute x plus C", "∫ 1/x dx = ln|x| + C", listOf("∫ dx/x = ln|x| + C"))
+        }
+        return Result(
+            "I can integrate polynomials like 3x^2, constants, sin x, cos x, e^x, and 1/x offline.",
+            "Try: integral of 3x^2",
+            listOf("Supported: axⁿ, sin, cos, eˣ, 1/x"),
+        )
+    }
+
+    private fun limitAt(raw: String, a: Double): Result? {
+        // Simple polynomial evaluation at a
+        val e = normalizeExpr(raw.replace("x", "($a)")) ?: return null
+        return try {
+            val v = eval(e)
+            Result(
+                "Limit as x approaches ${speakNumber(a)} is ${speakNumber(v)}",
+                "lim x→${formatNum(a)} = ${formatNum(v)}",
+                listOf("Substitute x = ${formatNum(a)}", "Value = ${formatNum(v)}"),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun speakPoly(s: String): String = s
+        .replace("^", " to the power ")
+        .replace("²", " squared")
+        .replace("³", " cubed")
+        .replace("+ C", " plus C")
+        .replace("+C", " plus C")
+
 
     fun formatNum(v: Double): String {
         if (v.isNaN()) return "undefined"
