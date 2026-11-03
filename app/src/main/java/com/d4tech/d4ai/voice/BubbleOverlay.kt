@@ -71,8 +71,8 @@ object BubbleOverlay {
     fun show(context: Context) {
         val ctx = context.applicationContext
         if (container != null) return
+        // Never navigate to Settings on wake — just skip the bubble if overlay is not granted.
         if (!canShow(ctx)) {
-            openPermissionScreen(ctx)
             return
         }
         try {

@@ -274,6 +274,9 @@ class D4WakeWordService : Service() {
         startForeground(NOTIF_ID, buildNotif(sleeping = false))
         BubbleOverlay.show(applicationContext)
         BubbleOverlay.setListening(true)
+        // Allow a short command window even if music is playing (next / pause)
+        try { speech?.forceListenThroughMusic = true } catch (_: Exception) {}
+        main.postDelayed({ try { speech?.forceListenThroughMusic = false } catch (_: Exception) {} }, 20_000L)
 
         val greetings = listOf(
             "Yes boss, I'm listening. What do you want me to do?",

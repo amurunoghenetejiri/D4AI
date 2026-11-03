@@ -1,5 +1,8 @@
 package com.d4tech.d4ai.commands
 
+import com.d4tech.d4ai.ai.OfflineMath
+import com.d4tech.d4ai.voice.MathOverlay
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -161,6 +164,15 @@ class CommandRouter(private val context: Context) {
         val text = raw.trim()
         val lower = text.lowercase().trim()
         if (lower.isEmpty()) return RouteResult.NotCommand
+
+        // Offline math / physics / conversions (no network)
+        OfflineMath.trySolve(text)?.let { r ->
+            try {
+                MathOverlay.show(context, r.display, r.steps)
+            } catch (_: Exception) {
+            }
+            return RouteResult.Spoke(r.spoken)
+        }
 
         // Fast local arithmetic (no network)
         Regex("""(?i)^(?:what(?:\s+is)?\s+)?(\d+(?:\.\d+)?)\s*(?:times|x|\*|multiplied by)\s*(\d+(?:\.\d+)?)\s*\??$""").find(lower)?.let {
@@ -1603,11 +1615,11 @@ class CommandRouter(private val context: Context) {
                         context.startActivity(search)
                     } catch (_: Exception) {
                     }
-                    "Playing $query on Phoenix."
+                    "Playing $query on Phoenix. I will not listen to the song."
                 } else {
                     // start playback
                     mediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY, "")
-                    "Playing music on Phoenix."
+                    "Playing music on Phoenix. I will not listen to the song."
                 }
             } else {
                 // fallback library

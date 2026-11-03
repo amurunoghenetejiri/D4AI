@@ -160,13 +160,12 @@ class SpeechEngine(
     fun startListening() {
         wantListen = true
         main.post {
-            // Avoid picking up loud media (Phoenix etc.) as speech
+            // Never listen while media is playing (avoids hearing the song as speech)
             try {
                 val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-                if (am.isMusicActive) {
-                    // short delay — user can still say next/pause via wake word service path
+                if (am.isMusicActive && !forceListenThroughMusic) {
                     notifyListening(false)
-                    // still listen but with lower sensitivity window after delay
+                    return@post
                 }
             } catch (_: Exception) {
             }
