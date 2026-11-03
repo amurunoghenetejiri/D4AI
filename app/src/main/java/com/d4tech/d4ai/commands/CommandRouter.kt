@@ -1,6 +1,7 @@
 package com.d4tech.d4ai.commands
 
 import com.d4tech.d4ai.ai.OfflineMath
+import com.d4tech.d4ai.ai.OfflineCalculatorEngine
 import com.d4tech.d4ai.voice.MathOverlay
 
 import android.Manifest
@@ -166,17 +167,32 @@ class CommandRouter(private val context: Context) {
         if (lower.isEmpty()) return RouteResult.NotCommand
 
         // Offline math / physics / conversions (no network)
-        OfflineMath.trySolve(text)?.let { r ->
-            try {
-                MathOverlay.show(
-                    context,
-                    equation = r.equation.ifBlank { r.display },
-                    steps = r.steps,
-                    answer = r.answer,
-                )
-            } catch (_: Exception) {
+        // Prefer full offline calculator (natural language + quadratic + simultaneous + …)
+        if (OfflineCalculatorEngine.isCalculationIntent(text) || OfflineMath.trySolve(text) != null) {
+            OfflineCalculatorEngine.solve(text)?.let { r ->
+                try {
+                    MathOverlay.show(
+                        context,
+                        equation = r.equation,
+                        steps = r.steps,
+                        answer = r.answer,
+                    )
+                } catch (_: Exception) {
+                }
+                return RouteResult.Spoke(r.spoken)
             }
-            return RouteResult.Spoke(r.spoken)
+            OfflineMath.trySolve(text)?.let { r ->
+                try {
+                    MathOverlay.show(
+                        context,
+                        equation = r.equation.ifBlank { r.display },
+                        steps = r.steps,
+                        answer = r.answer,
+                    )
+                } catch (_: Exception) {
+                }
+                return RouteResult.Spoke(r.spoken)
+            }
         }
 
         // Fast local arithmetic (no network)

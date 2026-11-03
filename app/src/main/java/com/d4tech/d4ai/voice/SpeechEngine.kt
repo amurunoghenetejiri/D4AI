@@ -58,7 +58,7 @@ class SpeechEngine(
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             tts?.language = Locale.getDefault()
-            tts?.setSpeechRate(1.0f)
+            tts?.setSpeechRate(0.95f)
             tts?.setPitch(1.0f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
@@ -130,12 +130,18 @@ class SpeechEngine(
         }
     }
 
-    private fun chunkForTts(text: String, maxLen: Int = 350): List<String> {
-        if (text.length <= maxLen) return listOf(text)
+    private fun chunkForTts(text: String, maxLen: Int = 220): List<String> {
+        // Split on punctuation so TTS pauses like a human (full stop, comma, question mark)
+        val rough = text
+            .replace(Regex("""([.!?])\s*"""), "$1|")
+            .replace(Regex("""([,;:])\s*"""), "$1|")
+            .split("|")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (rough.isEmpty()) return listOf(text)
         val parts = ArrayList<String>()
-        val sentences = text.split(Regex("(?<=[.!?])\\s+"))
         val buf = StringBuilder()
-        for (s in sentences) {
+        for (s in rough) {
             if (buf.isNotEmpty() && buf.length + s.length + 1 > maxLen) {
                 parts += buf.toString().trim()
                 buf.clear()
