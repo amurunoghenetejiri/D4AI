@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Mic,
   Moon,
+  MoonStar,
   MoreVertical,
   Paperclip,
   Link2,
@@ -31,6 +32,7 @@ import {
   Phone,
   Play,
   Plus,
+  Power,
   RefreshCw,
   Send,
   Settings,
@@ -47,6 +49,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { askD4AI } from "@/lib/pollinations";
+import {
+  installNativeBridge,
+  isNativeApp,
+  nativeAsk,
+  nativeListen,
+  nativeSpeak,
+  nativeStopListen,
+  nativeTtsUrl,
+  nativeWake,
+  nativeSleep,
+  setNativeHeardHandler,
+} from "@/lib/d4ai-native";
 import { appNavigate } from "@/lib/app-navigate";
 import { useSessionUser } from "@/lib/session";
 import type { SessionUser } from "@/lib/session";
@@ -366,6 +380,8 @@ function chunkSpeech(text: string, maxLen = 320): string[] {
 }
 
 function ttsUrl(text: string, voiceId: string): string {
+  // In the Android app there is no local server — use public TTS directly.
+  if (isNativeApp()) return nativeTtsUrl(text, voiceId);
   return `/api/d4ai/tts?voice=${encodeURIComponent(voiceId)}&text=${encodeURIComponent(text)}`;
 }
 
@@ -420,6 +436,19 @@ function playAudioQueue(
       }
     }
     activeAudio = null;
+    // Android app: WebView has no Web Speech API — speak through the native TTS
+    if (!anyPlayed && !speakingCancelled && opts?.fallbackText && isNativeApp()) {
+      try {
+        opts?.onstart?.();
+      } catch {}
+      nativeSpeak(opts.fallbackText.slice(0, 1500));
+      window.setTimeout(() => {
+        try {
+          opts?.onend?.();
+        } catch {}
+      }, 4000);
+      return;
+    }
     // Browser speechSynthesis fallback if audio produced nothing
     if (!anyPlayed && !speakingCancelled && opts?.fallbackText && typeof window !== "undefined" && window.speechSynthesis) {
       try {
@@ -1498,14 +1527,19 @@ function D4AiPage() {
           const ac = new AbortController();
           const to = window.setTimeout(() => ac.abort(), 90000);
           try {
-            full = await askD4AI(
-              userText,
-              history.slice(-6).map((m) => ({
-                role: m.role,
-                content: String(m.content || ""),
-              })),
-              ac.signal,
-            );
+            // Android app: device commands route through the native bridge
+            // first (offline CommandRouter), falling back to the cloud brain.
+            if (isNativeApp()) full = await nativeAsk(userText);
+            if (!full) {
+              full = await askD4AI(
+                userText,
+                history.slice(-6).map((m) => ({
+                  role: m.role,
+                  content: String(m.content || ""),
+                })),
+                ac.signal,
+              );
+            }
             full = String(full)
               .replace(/\n*Thought for [\d.]+s\s*$/i, "")
               .replace(/\b(My name is CR|I am CR|I'?m CR)[^.!?]*[.!?]?/gi, "I'm D4AI.")
@@ -1714,6 +1748,7 @@ function D4AiPage() {
       recognitionRef.current?.stop();
     } catch {}
     recognitionRef.current = null;
+    if (isNativeApp()) setNativeHeardHandler(null);
     if (voiceTimer.current) clearInterval(voiceTimer.current);
     voiceTimer.current = null;
     if (silenceTimerRef.current) {
@@ -1737,6 +1772,39 @@ function D4AiPage() {
       webkitSpeechRecognition?: new () => any;
     };
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (isNativeApp()) {
+      // Android app: mic runs on the native SpeechEngine via the D4AI bridge
+      setVoiceSecs(0);
+      setVoiceOn(true);
+      voiceOnRef.current = true;
+      recognitionRef.current = { stop: () => nativeStopListen() } as any;
+      recognitionRefGlobal = recognitionRef.current;
+      setNativeHeardHandler((t) => {
+        if (ttsSpeakingRef.current || isAiSpeakingRef.current || isAiSpeakingRefGlobal) return;
+        finalTranscriptRef.current = dedupeTranscript(
+          (finalTranscriptRef.current + " " + t).trim(),
+        );
+        setVoiceText(finalTranscriptRef.current);
+        if (callModeRef.current && !voicePausedRef.current) {
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            if (ttsSpeakingRef.current || isAiSpeakingRef.current) return;
+            const text = (finalTranscriptRef.current || "").trim();
+            if (text && callModeRef.current) void finishCallTurn(text);
+          }, SILENCE_MS);
+        } else if (voiceOnRef.current && !voicePausedRef.current) {
+          // Voice-note mode: re-arm the native mic after every result
+          window.setTimeout(() => {
+            if (voiceOnRef.current && !voicePausedRef.current && !ttsSpeakingRef.current) {
+              nativeListen();
+            }
+          }, 150);
+        }
+      });
+      nativeListen();
+      voiceTimer.current = setInterval(() => setVoiceSecs((x) => x + 1), 1000);
+      return;
+    }
     if (!SR) {
       setError("Voice needs Chrome or a supported browser. Allow microphone access.");
       setToast("Microphone / speech not available on this device");
@@ -2713,6 +2781,8 @@ function D4AiPage() {
               {[
                 { icon: History, label: "Chat History", action: () => { setDrawer(false); setHistoryOpen(true); } },
                 { icon: Phone, label: "Voice & Call", action: () => { setDrawer(false); startCallMode(); } },
+                { icon: Power, label: "Wake D4AI", action: () => { setDrawer(false); nativeWake(); setToast("D4AI is awake — say \"Hey D4AI\" anytime"); } },
+                { icon: MoonStar, label: "Sleep D4AI", action: () => { setDrawer(false); nativeSleep(); setToast("D4AI is sleeping"); } },
                 { icon: Settings, label: "Settings", action: () => { setDrawer(false); setSettingsOpen(true); } },
                 { icon: Info, label: "About D4AI", action: () => { setDrawer(false); setAboutOpen(true); } },
               ].map((item) => (

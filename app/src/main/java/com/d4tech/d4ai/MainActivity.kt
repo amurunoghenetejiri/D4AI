@@ -185,6 +185,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun stopListen() {
+            runOnUiThread { speech.stopListening() }
+        }
+
+        @JavascriptInterface
         fun wake() {
             runOnUiThread {
                 ensurePerms()
