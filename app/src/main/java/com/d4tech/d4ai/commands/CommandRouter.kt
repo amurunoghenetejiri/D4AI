@@ -168,7 +168,12 @@ class CommandRouter(private val context: Context) {
         // Offline math / physics / conversions (no network)
         OfflineMath.trySolve(text)?.let { r ->
             try {
-                MathOverlay.show(context, r.display, r.steps)
+                MathOverlay.show(
+                    context,
+                    equation = r.equation.ifBlank { r.display },
+                    steps = r.steps,
+                    answer = r.answer,
+                )
             } catch (_: Exception) {
             }
             return RouteResult.Spoke(r.spoken)

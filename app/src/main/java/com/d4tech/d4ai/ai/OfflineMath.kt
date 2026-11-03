@@ -3,254 +3,443 @@ package com.d4tech.d4ai.ai
 import kotlin.math.*
 
 /**
- * Fully offline math / physics helper for D4AI.
- * Parses spoken or typed expressions and returns a spoken-friendly answer.
+ * Fully offline math / physics engine for D4AI.
+ * Understands spoken forms: "two x squared plus three x plus six equals zero".
  */
 object OfflineMath {
 
-    data class Result(val spoken: String, val display: String, val steps: List<String>)
-
-    private val CONST = mapOf(
-        "pi" to Math.PI, "π" to Math.PI, "pie" to Math.PI,
-        "e" to Math.E, "euler" to Math.E,
-        "phi" to ((1 + sqrt(5.0)) / 2), "golden" to ((1 + sqrt(5.0)) / 2),
-        "c" to 299_792_458.0, // m/s
-        "g" to 9.80665, // m/s²
-        "avogadro" to 6.02214076e23,
-        "h" to 6.62607015e-34, // Planck
-        "k" to 1.380649e-23, // Boltzmann
-        "r" to 8.314462618, // gas constant
-        "electron" to 1.60217662e-19,
-        "me" to 9.1093837e-31,
-        "mp" to 1.6726219e-27,
-        "mn" to 1.6749275e-27,
-        "g0" to 9.80665,
-        "atm" to 101325.0,
-        "infty" to Double.POSITIVE_INFINITY,
-        "infinity" to Double.POSITIVE_INFINITY,
+    data class Result(
+        val spoken: String,
+        val display: String,
+        val equation: String,
+        val steps: List<String>,
+        val answer: String,
     )
 
-    /** Returns null if the text is not a math / conversion request. */
+    private val CONST = mapOf(
+        "pi" to Math.PI, "π" to Math.PI,
+        "e" to Math.E,
+        "phi" to ((1 + sqrt(5.0)) / 2),
+        "c" to 299_792_458.0,
+        "g" to 9.80665,
+        "avogadro" to 6.02214076e23,
+        "h" to 6.62607015e-34,
+        "k" to 1.380649e-23,
+        "r" to 8.314462618,
+    )
+
+    private val WORD_NUM = mapOf(
+        "zero" to 0, "one" to 1, "two" to 2, "three" to 3, "four" to 4,
+        "five" to 5, "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9,
+        "ten" to 10, "eleven" to 11, "twelve" to 12, "thirteen" to 13,
+        "fourteen" to 14, "fifteen" to 15, "sixteen" to 16, "seventeen" to 17,
+        "eighteen" to 18, "nineteen" to 19, "twenty" to 20, "thirty" to 30,
+        "forty" to 40, "fifty" to 50, "sixty" to 60, "seventy" to 70,
+        "eighty" to 80, "ninety" to 90, "hundred" to 100, "thousand" to 1000,
+        "half" to 0, // handled specially
+    )
+
     fun trySolve(raw: String): Result? {
         val text = raw.trim()
         if (text.isBlank()) return null
-        val lower = text.lowercase()
+        var lower = text.lowercase()
             .replace("what's", "what is")
             .replace("whats", "what is")
             .replace("°", " degrees")
 
+        // Strip leading solve/calculate verbs but remember intent
+        val isSolveIntent = Regex(
+            """(?i)\b(solve|calculate|compute|evaluate|find\s+(?:the\s+)?(?:value|root|roots|solution|solutions|x)|equate|work\s+out|simplify)\b"""
+        ).containsMatchIn(lower)
+
+        lower = lower
+            .replace(Regex("""(?i)^(?:please\s+)?(?:solve|calculate|compute|evaluate|work\s+out|simplify)(?:\s+the)?(?:\s+equation)?(?:\s+for)?\s*"""), "")
+            .replace(Regex("""(?i)^(?:find\s+(?:the\s+)?(?:value\s+of\s+)?x(?:\s+in)?|equate)\s*"""), "")
+            .trim()
+
         // Unit conversion
         convert(lower)?.let { return it }
 
-        // Constant lookup
-        if (lower.matches(Regex("""(?:what(?:\s+is)?\s+)?(?:value\s+of\s+)?(pi|π|e|phi|g|c|avogadro)\??"""))) {
-            val key = Regex("""(pi|π|e|phi|g|c|avogadro)""").find(lower)!!.groupValues[1]
+        // Constant
+        if (lower.matches(Regex("""(?:what(?:\s+is)?\s+)?(?:value\s+of\s+)?(pi|π|e|phi|g|c)\??"""))) {
+            val key = Regex("""(pi|π|e|phi|g|c)""").find(lower)!!.groupValues[1]
             val v = CONST[key] ?: return null
-            return Result(speakNumber(v), formatNum(v), listOf("Constant $key = ${formatNum(v)}"))
+            return Result(
+                "The value of $key is ${speakNumber(v)}",
+                "Constant $key",
+                key,
+                listOf("$key = ${formatNum(v)}"),
+                formatNum(v),
+            )
         }
 
-        // Quadratic: solve 2x^2 - 3x + 2 = 0
-        Regex(
-            """(?i)(?:solve\s+)?(-?\d*\.?\d*)\s*x\s*(?:\^|to the power(?: of)?\s*|squared|\*\*)\s*2\s*([+-])\s*(-?\d*\.?\d*)\s*x\s*([+-])\s*(-?\d*\.?\d*)\s*=\s*0"""
-        ).find(lower.replace(" ", ""))?.let { m ->
-            // fallback simpler
-        }
-        quadratic(lower)?.let { return it }
+        // Spoken → algebraic
+        val alg = spokenToAlgebra(lower)
 
-        // Power: 5 raise to power 5 / 5 to the power of 5 / 5^5
+        // Quadratic / polynomial = 0
+        quadratic(alg, lower)?.let { return it }
+
+        // Derivative / integral / etc.
+        Regex("""(?i)(?:derivative|differentiate|d/dx|dy/dx)\s*(?:of\s*)?(.+)""").find(lower)?.let {
+            return differentiate(spokenToAlgebra(it.groupValues[1]))
+        }
+        Regex("""(?i)(?:integral|integrate|∫)\s*(?:of\s*)?(.+?)(?:\s+d\s*x)?$""").find(lower)?.let {
+            return integrate(spokenToAlgebra(it.groupValues[1]))
+        }
+
+        // Power: 5 raise to power 5
         Regex("""(?i)(\d+(?:\.\d+)?)\s*(?:raise(?:d)?\s+to(?:\s+the)?\s+power(?:\s+of)?|to the power(?: of)?|\^|\*\*)\s*(\d+(?:\.\d+)?)""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
             val r = a.pow(b)
             return Result(
-                "${speakNumber(a)} to the power ${speakNumber(b)} is ${speakNumber(r)}",
-                "${formatNum(a)}^${formatNum(b)} = ${formatNum(r)}",
-                listOf("${formatNum(a)}^${formatNum(b)}", "= ${formatNum(r)}"),
+                "${speakNumber(a)} raised to the power ${speakNumber(b)} is ${speakNumber(r)}",
+                "${formatNum(a)} raised to ${formatNum(b)}",
+                "${formatNum(a)}^${formatNum(b)}",
+                listOf("${formatNum(a)} × ${formatNum(a)}".let { s -> if (b == 2.0) s else "${formatNum(a)}^${formatNum(b)}" }, "= ${formatNum(r)}"),
+                formatNum(r),
             )
         }
 
-        // Square root
         Regex("""(?i)(?:square\s+root(?:\s+of)?|sqrt|root)\s*(?:of\s*)?(\d+(?:\.\d+)?)""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = sqrt(a)
-            return Result("Square root of ${speakNumber(a)} is ${speakNumber(r)}", "√${formatNum(a)} = ${formatNum(r)}", listOf("√${formatNum(a)}", "= ${formatNum(r)}"))
+            return Result(
+                "Square root of ${speakNumber(a)} is ${speakNumber(r)}",
+                "√${formatNum(a)}",
+                "√${formatNum(a)}",
+                listOf("√${formatNum(a)} = ${formatNum(r)}"),
+                formatNum(r),
+            )
         }
-        // Cube root
         Regex("""(?i)(?:cube\s+root(?:\s+of)?|cbrt)\s*(?:of\s*)?(\d+(?:\.\d+)?)""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = a.pow(1.0 / 3.0)
-            return Result("Cube root of ${speakNumber(a)} is ${speakNumber(r)}", "∛${formatNum(a)} = ${formatNum(r)}", listOf("∛${formatNum(a)}", "= ${formatNum(r)}"))
+            return Result(
+                "Cube root of ${speakNumber(a)} is ${speakNumber(r)}",
+                "∛${formatNum(a)}",
+                "∛${formatNum(a)}",
+                listOf("∛${formatNum(a)} = ${formatNum(r)}"),
+                formatNum(r),
+            )
         }
-        // Square / cubed
         Regex("""(?i)(\d+(?:\.\d+)?)\s*squared""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = a * a
-            return Result("${speakNumber(a)} squared is ${speakNumber(r)}", "${formatNum(a)}² = ${formatNum(r)}", listOf("${formatNum(a)}² = ${formatNum(r)}"))
+            return Result("${speakNumber(a)} squared is ${speakNumber(r)}", "${formatNum(a)}²", "${formatNum(a)}²", listOf("${formatNum(a)}² = ${formatNum(r)}"), formatNum(r))
         }
         Regex("""(?i)(\d+(?:\.\d+)?)\s*cubed""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = a * a * a
-            return Result("${speakNumber(a)} cubed is ${speakNumber(r)}", "${formatNum(a)}³ = ${formatNum(r)}", listOf("${formatNum(a)}³ = ${formatNum(r)}"))
+            return Result("${speakNumber(a)} cubed is ${speakNumber(r)}", "${formatNum(a)}³", "${formatNum(a)}³", listOf("${formatNum(a)}³ = ${formatNum(r)}"), formatNum(r))
         }
 
-        // Percent
         Regex("""(?i)(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble(); val r = a / 100.0 * b
-            return Result("${speakNumber(a)} percent of ${speakNumber(b)} is ${speakNumber(r)}", "${formatNum(a)}% of ${formatNum(b)} = ${formatNum(r)}", listOf("${formatNum(a)}/100 × ${formatNum(b)} = ${formatNum(r)}"))
+            return Result(
+                "${speakNumber(a)} percent of ${speakNumber(b)} is ${speakNumber(r)}",
+                "${formatNum(a)}% of ${formatNum(b)}",
+                "${formatNum(a)}% of ${formatNum(b)}",
+                listOf("${formatNum(a)} ÷ 100 × ${formatNum(b)} = ${formatNum(r)}"),
+                formatNum(r),
+            )
         }
 
-        // Trig in degrees by default
+        // Fraction: six over two / 1 whole number 3 over 5
+        Regex("""(?i)(\d+)\s+whole\s+number\s+(\d+)\s+over\s+(\d+)""").find(lower)?.let {
+            val w = it.groupValues[1].toDouble(); val n = it.groupValues[2].toDouble(); val d = it.groupValues[3].toDouble()
+            val r = w + n / d
+            return Result(
+                "One mixed fraction equals ${speakNumber(r)}",
+                "${formatNum(w)} ${formatNum(n)}/${formatNum(d)}",
+                "${formatNum(w)} ${formatNum(n)}/${formatNum(d)}",
+                listOf("Mixed: ${formatNum(w)} + ${formatNum(n)}/${formatNum(d)} = ${formatNum(r)}"),
+                formatNum(r),
+            )
+        }
+        Regex("""(?i)(\d+(?:\.\d+)?)\s+over\s+(\d+(?:\.\d+)?)""").find(lower)?.let {
+            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
+            if (b == 0.0) return Result("Cannot divide by zero", "undefined", "${formatNum(a)}/${formatNum(b)}", listOf("Division by zero"), "undefined")
+            val r = a / b
+            return Result(
+                "${speakNumber(a)} over ${speakNumber(b)} is ${speakNumber(r)}",
+                "${formatNum(a)}/${formatNum(b)}",
+                "${formatNum(a)}/${formatNum(b)}",
+                listOf("${formatNum(a)} ÷ ${formatNum(b)} = ${formatNum(r)}"),
+                formatNum(r),
+            )
+        }
+
+        // Trig
         Regex("""(?i)(?:sin|sine)\s*(?:of\s*)?(\d+(?:\.\d+)?)(?:\s*degrees?)?""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = sin(Math.toRadians(a))
-            return Result("Sine of ${speakNumber(a)} degrees is ${speakNumber(r)}", "sin(${formatNum(a)}°) = ${formatNum(r)}", listOf("sin(${formatNum(a)}°) = ${formatNum(r)}"))
+            return Result("Sine of ${speakNumber(a)} degrees is ${speakNumber(r)}", "sin(${formatNum(a)}°)", "sin(${formatNum(a)}°)", listOf("sin(${formatNum(a)}°) = ${formatNum(r)}"), formatNum(r))
         }
         Regex("""(?i)(?:cos|cosine)\s*(?:of\s*)?(\d+(?:\.\d+)?)(?:\s*degrees?)?""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = cos(Math.toRadians(a))
-            return Result("Cosine of ${speakNumber(a)} degrees is ${speakNumber(r)}", "cos(${formatNum(a)}°) = ${formatNum(r)}", listOf("cos(${formatNum(a)}°) = ${formatNum(r)}"))
+            return Result("Cosine of ${speakNumber(a)} degrees is ${speakNumber(r)}", "cos(${formatNum(a)}°)", "cos(${formatNum(a)}°)", listOf("cos(${formatNum(a)}°) = ${formatNum(r)}"), formatNum(r))
         }
         Regex("""(?i)(?:tan|tangent)\s*(?:of\s*)?(\d+(?:\.\d+)?)(?:\s*degrees?)?""").find(lower)?.let {
             val a = it.groupValues[1].toDouble(); val r = tan(Math.toRadians(a))
-            return Result("Tangent of ${speakNumber(a)} degrees is ${speakNumber(r)}", "tan(${formatNum(a)}°) = ${formatNum(r)}", listOf("tan(${formatNum(a)}°) = ${formatNum(r)}"))
-        }
-
-        // Log / ln
-        Regex("""(?i)(?:natural\s+)?(?:log|ln)\s*(?:of\s*)?(\d+(?:\.\d+)?)""").find(lower)?.let {
-            val a = it.groupValues[1].toDouble()
-            if (a <= 0) return Result("Logarithm is only defined for positive numbers.", "undefined", emptyList())
-            val r = if (lower.contains("ln") || lower.contains("natural")) ln(a) else log10(a)
-            val name = if (lower.contains("ln") || lower.contains("natural")) "ln" else "log₁₀"
-            return Result("$name of ${speakNumber(a)} is ${speakNumber(r)}", "$name(${formatNum(a)}) = ${formatNum(r)}", listOf("$name(${formatNum(a)}) = ${formatNum(r)}"))
+            return Result("Tangent of ${speakNumber(a)} degrees is ${speakNumber(r)}", "tan(${formatNum(a)}°)", "tan(${formatNum(a)}°)", listOf("tan(${formatNum(a)}°) = ${formatNum(r)}"), formatNum(r))
         }
 
         // Factorial
         Regex("""(?i)(\d{1,3})\s*factorial|(\d{1,3})\s*!""").find(lower)?.let {
             val n = (it.groupValues[1].ifBlank { it.groupValues[2] }).toInt()
-            if (n > 20) return Result("That factorial is too large to compute offline.", "n! too large", emptyList())
+            if (n > 20) return Result("That factorial is too large offline.", "n! too large", "$n!", emptyList(), "—")
             var r = 1L; for (i in 2..n) r *= i
-            return Result("${speakNumber(n.toDouble())} factorial is ${speakNumber(r.toDouble())}", "$n! = $r", listOf("$n! = $r"))
+            return Result("${speakNumber(n.toDouble())} factorial is ${speakNumber(r.toDouble())}", "$n!", "$n!", listOf("$n! = $r"), r.toString())
         }
 
-        // Absolute value
-        Regex("""(?i)(?:absolute\s+value\s+of|abs)\s*(-?\d+(?:\.\d+)?)""").find(lower)?.let {
-            val a = it.groupValues[1].toDouble(); val r = abs(a)
-            return Result("Absolute value of ${speakNumber(a)} is ${speakNumber(r)}", "|${formatNum(a)}| = ${formatNum(r)}", listOf("|${formatNum(a)}| = ${formatNum(r)}"))
-        }
-
-
-        // Derivative dy/dx of simple polynomials: d/dx (ax^n) = n*a*x^(n-1)
-        Regex("""(?i)(?:derivative|differentiate|d/dx|dy/dx|d\s*y\s*/\s*d\s*x)\s*(?:of\s*)?(.+)""").find(lower)?.let {
-            val expr = it.groupValues[1].trim()
-            return differentiate(expr)
-        }
-        if (lower.contains("dy") && lower.contains("dx")) {
-            val expr = lower.replace("dy/dx", "").replace("dy dx", "").replace("of", "").trim()
-            if (expr.isNotBlank()) differentiate(expr)?.let { return it }
-        }
-
-        // Integral of simple polynomials: ∫ ax^n dx = a/(n+1) x^(n+1) + C
-        Regex("""(?i)(?:integral|integrate|∫)\s*(?:of\s*)?(.+?)(?:\s+d\s*x)?$""").find(lower)?.let {
-            val expr = it.groupValues[1].trim()
-            return integrate(expr)
-        }
-
-        // Limit as x approaches a
-        Regex("""(?i)limit\s+(?:as\s+)?x\s*(?:approaches|tends\s+to|→|->)\s*(-?\d+(?:\.\d+)?)\s+of\s+(.+)""").find(lower)?.let {
-            val a = it.groupValues[1].toDouble()
-            val expr = it.groupValues[2].trim()
-            return limitAt(expr, a)
-        }
-
-        // Matrix 2x2 determinant: determinant of matrix a b c d / det [[a,b],[c,d]]
-        Regex("""(?i)(?:determinant|det)\s*(?:of\s*)?(?:matrix\s*)?(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""").find(lower)?.let {
-            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
-            val c = it.groupValues[3].toDouble(); val d = it.groupValues[4].toDouble()
-            val det = a * d - b * c
-            return Result(
-                "Determinant is ${speakNumber(det)}",
-                "det = ${formatNum(a)}·${formatNum(d)} − ${formatNum(b)}·${formatNum(c)} = ${formatNum(det)}",
-                listOf("Matrix [[${formatNum(a)}, ${formatNum(b)}], [${formatNum(c)}, ${formatNum(d)}]]", "det = ad − bc = ${formatNum(det)}"),
-            )
-        }
-
-        // 2x2 inverse
-        Regex("""(?i)inverse\s*(?:of\s*)?(?:matrix\s*)?(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)""").find(lower)?.let {
-            val a = it.groupValues[1].toDouble(); val b = it.groupValues[2].toDouble()
-            val c = it.groupValues[3].toDouble(); val d = it.groupValues[4].toDouble()
-            val det = a * d - b * c
-            if (abs(det) < 1e-12) return Result("Matrix is singular; inverse does not exist.", "det = 0", listOf("det = 0 → no inverse"))
-            val ia = d / det; val ib = -b / det; val ic = -c / det; val id = a / det
-            return Result(
-                "Inverse matrix rows are ${speakNumber(ia)}, ${speakNumber(ib)} and ${speakNumber(ic)}, ${speakNumber(id)}",
-                "A⁻¹ = (1/${formatNum(det)}) · [[${formatNum(d)}, ${formatNum(-b)}], [${formatNum(-c)}, ${formatNum(a)}]]",
-                listOf("det = ${formatNum(det)}", "A⁻¹ = [[${formatNum(ia)}, ${formatNum(ib)}], [${formatNum(ic)}, ${formatNum(id)}]]"),
-            )
-        }
-
-        // Sum 1 to n
-        Regex("""(?i)(?:sum|add)\s*(?:from\s*)?1\s*(?:to|through)\s*(\d+)""").find(lower)?.let {
-            val n = it.groupValues[1].toInt()
-            val r = n.toLong() * (n + 1) / 2
-            return Result("Sum from 1 to $n is ${speakNumber(r.toDouble())}", "Σ = $r", listOf("n(n+1)/2 = $r"))
-        }
-
-        // Mean of numbers: average of 2 4 6
-        Regex("""(?i)(?:average|mean)\s+(?:of\s+)?([\d\s.,]+)""").find(lower)?.let {
-            val nums = it.groupValues[1].split(Regex("""[\s,]+""")).mapNotNull { s -> s.toDoubleOrNull() }
-            if (nums.isNotEmpty()) {
-                val r = nums.average()
-                return Result("Average is ${speakNumber(r)}", "mean = ${formatNum(r)}", listOf("(${nums.joinToString("+") { formatNum(it) }})/${nums.size} = ${formatNum(r)}"))
+        // Arithmetic expression (BODMAS)
+        val expr = normalizeExpr(alg.ifBlank { lower }) ?: run {
+            if (isSolveIntent) {
+                return Result(
+                    "I couldn't parse that equation offline. Try saying it like: two x squared plus three x plus six equals zero.",
+                    "Could not parse",
+                    text,
+                    listOf("Tip: say coefficients clearly, e.g. 2x² + 3x + 6 = 0"),
+                    "—",
+                )
             }
+            return null
         }
-
-
-                // Simple expression with BODMAS via recursive descent on normalized string
-        val expr = normalizeExpr(lower) ?: return null
         return try {
-            val steps = mutableListOf<String>()
-            steps += "Expression: $expr"
             val value = eval(expr)
-            steps += "Result: ${formatNum(value)}"
-            Result("The answer is ${speakNumber(value)}", "${prettyExpr(expr)} = ${formatNum(value)}", steps)
+            Result(
+                "The answer is ${speakNumber(value)}",
+                prettyOps(expr),
+                prettyOps(expr),
+                listOf("Apply BODMAS (brackets, orders, division/multiplication, addition/subtraction)", "${prettyOps(expr)} = ${formatNum(value)}"),
+                formatNum(value),
+            )
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun quadratic(lower: String): Result? {
-        // ax^2 + bx + c = 0 (spoken forms)
-        val cleaned = lower
+    /** Convert spoken English math into compact algebra: "two x squared" → "2x^2" */
+    fun spokenToAlgebra(input: String): String {
+        var s = " $input "
+        // word numbers (simple)
+        for ((w, n) in WORD_NUM.entries.sortedByDescending { it.key.length }) {
+            if (w == "half") continue
+            s = s.replace(Regex("""\b$w\b"""), " $n ")
+        }
+        s = s.replace(Regex("""\bhalf\b"""), " 0.5 ")
+        s = s
+            .replace("x squared", "x^2")
+            .replace("x squared", "x^2")
+            .replace("ex squared", "x^2")
+            .replace("x cube", "x^3")
+            .replace("x cubed", "x^3")
             .replace("squared", "^2")
+            .replace("cubed", "^3")
+            .replace("to the power of", "^")
+            .replace("raised to the power of", "^")
+            .replace("raised to power", "^")
+            .replace("raise to power", "^")
+            .replace("power of", "^")
             .replace("equals", "=")
             .replace("equal to", "=")
+            .replace("is equal to", "=")
+            .replace("plus", "+")
+            .replace("minus", "-")
+            .replace("times", "×")
+            .replace("multiplied by", "×")
+            .replace("divided by", "÷")
+            .replace("over", "/")
+            .replace("open bracket", "(")
+            .replace("close bracket", ")")
+            .replace("left bracket", "(")
+            .replace("right bracket", ")")
+            .replace("bracket", "(")
+            // digit x digit → × (not variable)
+            .replace(Regex("""(\d)\s*[x×*]\s*(\d)"""), "$1×$2")
+            // "2 x squared" already handled; "2x" patterns
+            .replace(Regex("""(\d)\s+x\b"""), "$1x")
+            .replace(Regex("""\bx\s+squared\b"""), "x^2")
             .replace(" ", "")
-        val m = Regex(
-            """(-?\d*\.?\d*)x\^2([+-]\d*\.?\d*)x([+-]\d*\.?\d*)=0"""
-        ).find(cleaned) ?: return null
-        fun coeff(s: String, def: Double = 1.0): Double {
-            if (s.isEmpty() || s == "+" || s == "-") return if (s == "-") -def else def
-            return s.toDoubleOrNull() ?: def
+        // normalize operators for internal eval
+        return s
+    }
+
+    private fun prettyOps(s: String): String =
+        s.replace("*", "×").replace("/", "÷").replace("^2", "²").replace("^3", "³")
+
+    private fun quadratic(alg: String, original: String): Result? {
+        // Normalize: 2x^2+3x+6=0 or 2x²+3x+6=0
+        var e = alg
+            .replace("²", "^2")
+            .replace("³", "^3")
+            .replace("×", "*")
+            .replace("÷", "/")
+            .replace(" ", "")
+            .lowercase()
+        if (!e.contains("x") || !e.contains("=")) {
+            // maybe "2x^2+3x+6" without equals — treat as = 0 if solve-like
+            if (e.contains("x^2") || e.contains("x2")) {
+                e = e.replace("x2", "x^2") + "=0"
+            } else return null
         }
-        val a = coeff(m.groupValues[1].ifBlank { "1" })
-        val b = coeff(m.groupValues[2])
-        val c = coeff(m.groupValues[3])
+        e = e.replace("x2", "x^2")
+        // Move RHS to LHS if RHS != 0
+        val sides = e.split("=")
+        if (sides.size != 2) return null
+        var left = sides[0]
+        val right = sides[1]
+        if (right != "0" && right.isNotBlank()) {
+            // simple: assume right is constant to subtract
+            left = if (right.startsWith("-")) "$left+${right.drop(1)}" else "$left-($right)"
+            // for pure constant right
+            if (right.matches(Regex("""-?\d+(?:\.\d+)?"""))) {
+                left = sides[0]
+                val r = right.toDouble()
+                // append -r as constant term later via re-parse
+                e = sides[0] + if (r >= 0) "-${formatNum(r)}" else "+${formatNum(-r)}"
+                e = e + "=0"
+                left = e.removeSuffix("=0")
+            } else {
+                e = left + "=0"
+                left = sides[0]
+            }
+        } else {
+            left = sides[0]
+        }
+
+        // Parse ax^2 + bx + c
+        // Ensure terms have signs
+        val norm = left
+            .replace(Regex("""\+-"""), "-")
+            .replace(Regex("""-\+"""), "-")
+        // Extract a, b, c with regex
+        var a = 0.0
+        var b = 0.0
+        var c = 0.0
+        // ax^2
+        Regex("""([+-]?\d*\.?\d*)x\^2""").find(norm)?.let {
+            val coef = it.groupValues[1]
+            a = when {
+                coef.isEmpty() || coef == "+" -> 1.0
+                coef == "-" -> -1.0
+                else -> coef.toDoubleOrNull() ?: 1.0
+            }
+        }
+        // bx (not x^2)
+        Regex("""([+-]?\d*\.?\d*)x(?!\^)""").findAll(norm).forEach {
+            val coef = it.groupValues[1]
+            val v = when {
+                coef.isEmpty() || coef == "+" -> 1.0
+                coef == "-" -> -1.0
+                else -> coef.toDoubleOrNull() ?: 1.0
+            }
+            b += v
+        }
+        // constant terms: signed numbers not followed by x
+        Regex("""([+-]\d+(?:\.\d+)?)(?!x)""").findAll(
+            if (norm.startsWith("-") || norm.startsWith("+")) norm else "+$norm"
+        ).forEach {
+            val after = norm.getOrNull(
+                (if (norm.startsWith("-") || norm.startsWith("+")) it.range.last else it.range.last)
+            )
+            // safer: strip ax^2 and bx terms then parse remaining
+        }
+        // Cleaner constant: remove ax^2 and bx tokens then sum leftovers
+        var rest = norm
+        rest = rest.replace(Regex("""[+-]?\d*\.?\d*x\^2"""), "")
+        rest = rest.replace(Regex("""[+-]?\d*\.?\d*x(?!\^)"""), "")
+        if (rest.isBlank() || rest == "+" || rest == "-") {
+            c = 0.0
+        } else {
+            // rest like "+6" or "-3+6"
+            var signed = if (rest.first() in setOf('+', '-')) rest else "+$rest"
+            c = 0.0
+            Regex("""[+-]\d+(?:\.\d+)?""").findAll(signed).forEach { m ->
+                c += m.value.toDouble()
+            }
+        }
+        if (!norm.contains("x^2") && !norm.contains("x²")) return null
+        if (a == 0.0) a = 1.0
+
+        val eqDisplay = buildString {
+            append(formatCoeff(a, "x²", first = true))
+            append(formatCoeff(b, "x", first = false))
+            append(formatConst(c))
+            append(" = 0")
+        }
+
         val disc = b * b - 4 * a * c
-        val steps = mutableListOf(
-            "Equation: ${formatNum(a)}x² ${if (b >= 0) "+" else ""}${formatNum(b)}x ${if (c >= 0) "+" else ""}${formatNum(c)} = 0",
-            "Discriminant Δ = b² − 4ac = ${formatNum(disc)}",
-        )
+        val steps = mutableListOf<String>()
+        steps += "Use the quadratic formula:"
+        steps += "x = (−b ± √(b² − 4ac)) / (2a)"
+        steps += "Here: a = ${formatNum(a)}, b = ${formatNum(b)}, c = ${formatNum(c)}"
+        steps += "Discriminant: Δ = b² − 4ac = ${formatNum(b)}² − 4(${formatNum(a)})(${formatNum(c)}) = ${formatNum(disc)}"
+
         if (disc < 0) {
-            steps += "No real roots"
-            return Result("No real solutions. Discriminant is negative.", "No real roots (Δ=${formatNum(disc)})", steps)
+            steps += "Since Δ < 0, no real roots."
+            return Result(
+                "No real solution. The discriminant is negative ${speakNumber(disc)}.",
+                eqDisplay,
+                eqDisplay,
+                steps,
+                "No Real Solution",
+            )
         }
         val s = sqrt(disc)
         val x1 = (-b + s) / (2 * a)
         val x2 = (-b - s) / (2 * a)
-        steps += "x = (−b ± √Δ) / 2a"
-        steps += "x₁ = ${formatNum(x1)}"
-        steps += "x₂ = ${formatNum(x2)}"
+        steps += "x₁ = (−(${formatNum(b)}) + √(${formatNum(disc)})) / (2×${formatNum(a)}) = ${formatNum(x1)}"
+        steps += "x₂ = (−(${formatNum(b)}) − √(${formatNum(disc)})) / (2×${formatNum(a)}) = ${formatNum(x2)}"
+        val ans = if (abs(x1 - x2) < 1e-9) "x = ${formatNum(x1)}" else "x₁ = ${formatNum(x1)}, x₂ = ${formatNum(x2)}"
         return Result(
-            "The solutions are x equals ${speakNumber(x1)} and x equals ${speakNumber(x2)}",
-            "x₁=${formatNum(x1)}, x₂=${formatNum(x2)}",
+            "The solutions are ${speakNumber(x1)} and ${speakNumber(x2)}",
+            eqDisplay,
+            eqDisplay,
             steps,
+            ans,
         )
     }
 
+    private fun formatCoeff(v: Double, sym: String, first: Boolean): String {
+        if (abs(v) < 1e-12) return ""
+        val sign = when {
+            first && v < 0 -> "−"
+            first -> ""
+            v < 0 -> " − "
+            else -> " + "
+        }
+        val mag = abs(v)
+        val body = if (abs(mag - 1.0) < 1e-12) sym else "${formatNum(mag)}$sym"
+        return sign + body
+    }
+
+    private fun formatConst(v: Double): String {
+        if (abs(v) < 1e-12) return ""
+        return if (v < 0) " − ${formatNum(-v)}" else " + ${formatNum(v)}"
+    }
+
     private fun convert(lower: String): Result? {
+        // km/h to m/s etc
+        Regex(
+            """(?i)(?:convert\s+)?(-?\d+(?:\.\d+)?)\s*(km/h|km\s*per\s*h(?:our)?|kilometers?\s*per\s*hour|m/s|meters?\s*per\s*second|km/s)\s*(?:to|in|into)\s*(km/h|km\s*per\s*h(?:our)?|m/s|meters?\s*per\s*second|km/s)"""
+        ).find(lower)?.let {
+            val v = it.groupValues[1].toDouble()
+            val from = normSpeed(it.groupValues[2])
+            val to = normSpeed(it.groupValues[3])
+            val ms = when (from) {
+                "km/h" -> v / 3.6
+                "km/s" -> v * 1000.0
+                else -> v
+            }
+            val out = when (to) {
+                "km/h" -> ms * 3.6
+                "km/s" -> ms / 1000.0
+                else -> ms
+            }
+            return Result(
+                "${speakNumber(v)} $from is ${speakNumber(out)} $to",
+                "${formatNum(v)} $from → ${formatNum(out)} $to",
+                "${formatNum(v)} $from",
+                listOf("${formatNum(v)} $from = ${formatNum(out)} $to"),
+                "${formatNum(out)} $to",
+            )
+        }
         val m = Regex(
             """(?i)(?:convert\s+)?(-?\d+(?:\.\d+)?)\s*(km|kilometers?|m|meters?|cm|centimeters?|mm|miles?|mi|kg|kilograms?|g|grams?|mg|lb|pounds?|oz|celsius|°?c|fahrenheit|°?f|kelvin|k|l|liters?|ml|milliliters?|inches?|in|feet|ft|yards?|yd|hours?|hrs?|minutes?|mins?|seconds?|secs?)\s*(?:to|in|into)\s*(km|kilometers?|m|meters?|cm|centimeters?|mm|miles?|mi|kg|kilograms?|g|grams?|mg|lb|pounds?|oz|celsius|°?c|fahrenheit|°?f|kelvin|k|l|liters?|ml|milliliters?|inches?|in|feet|ft|yards?|yd|hours?|hrs?|minutes?|mins?|seconds?|secs?)"""
         ).find(lower) ?: return null
@@ -260,9 +449,20 @@ object OfflineMath {
         val r = convertUnits(value, from, to) ?: return null
         return Result(
             "${speakNumber(value)} $from is ${speakNumber(r)} $to",
-            "${formatNum(value)} $from = ${formatNum(r)} $to",
-            listOf("${formatNum(value)} $from → ${formatNum(r)} $to"),
+            "${formatNum(value)} $from → ${formatNum(r)} $to",
+            "${formatNum(value)} $from",
+            listOf("${formatNum(value)} $from = ${formatNum(r)} $to"),
+            "${formatNum(r)} $to",
         )
+    }
+
+    private fun normSpeed(u: String): String {
+        val x = u.lowercase().replace(" ", "")
+        return when {
+            x.contains("km/h") || x.contains("kmperh") || x.contains("kilometersperhour") -> "km/h"
+            x.contains("km/s") -> "km/s"
+            else -> "m/s"
+        }
     }
 
     private fun normUnit(u: String): String {
@@ -295,19 +495,12 @@ object OfflineMath {
 
     private fun convertUnits(v: Double, from: String, to: String): Double? {
         if (from == to) return v
-        // temperature
         if (from in listOf("C", "F", "K") && to in listOf("C", "F", "K")) {
             val c = when (from) {
-                "C" -> v
-                "F" -> (v - 32) * 5 / 9
-                "K" -> v - 273.15
-                else -> return null
+                "C" -> v; "F" -> (v - 32) * 5 / 9; "K" -> v - 273.15; else -> return null
             }
             return when (to) {
-                "C" -> c
-                "F" -> c * 9 / 5 + 32
-                "K" -> c + 273.15
-                else -> null
+                "C" -> c; "F" -> c * 9 / 5 + 32; "K" -> c + 273.15; else -> null
             }
         }
         val lengthToM = mapOf(
@@ -317,7 +510,6 @@ object OfflineMath {
         val massToKg = mapOf("kg" to 1.0, "g" to 0.001, "mg" to 1e-6, "lb" to 0.45359237, "oz" to 0.0283495)
         val volToL = mapOf("L" to 1.0, "mL" to 0.001)
         val timeToS = mapOf("h" to 3600.0, "min" to 60.0, "s" to 1.0)
-
         fun mapConvert(table: Map<String, Double>): Double? {
             val a = table[from] ?: return null
             val b = table[to] ?: return null
@@ -326,54 +518,60 @@ object OfflineMath {
         return mapConvert(lengthToM) ?: mapConvert(massToKg) ?: mapConvert(volToL) ?: mapConvert(timeToS)
     }
 
+    private fun differentiate(e0: String): Result {
+        val e = e0.lowercase().replace(" ", "").replace("²", "^2").replace("³", "^3")
+        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
+            val a = coef(it.groupValues[1]); val n = it.groupValues[2].toDouble()
+            val newA = a * n; val newN = n - 1
+            val disp = when {
+                newN == 0.0 -> formatNum(newA)
+                newN == 1.0 -> "${formatNum(newA)}x"
+                else -> "${formatNum(newA)}x^${formatNum(newN)}"
+            }
+            return Result("The derivative is $disp", "d/dx", e, listOf("Power rule: d/dx [xⁿ] = n·xⁿ⁻¹", "d/dx = $disp"), disp)
+        }
+        Regex("""^(-?\d*\.?\d*)x$""").find(e)?.let {
+            val a = coef(it.groupValues[1])
+            return Result("The derivative is ${formatNum(a)}", "d/dx", e, listOf("d/dx [ax] = a"), formatNum(a))
+        }
+        return Result("I can differentiate axⁿ, sin x, cos x, eˣ, ln x offline.", "d/dx", e0, listOf("Try: derivative of 3x^4"), "—")
+    }
+
+    private fun integrate(e0: String): Result {
+        val e = e0.lowercase().replace(" ", "").replace("dx", "").replace("²", "^2")
+        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
+            val a = coef(it.groupValues[1]); val n = it.groupValues[2].toDouble()
+            val newN = n + 1; val newA = a / newN
+            val disp = "${formatNum(newA)}x^${formatNum(newN)} + C"
+            return Result("The integral is $disp", "∫", e, listOf("∫ xⁿ dx = xⁿ⁺¹/(n+1) + C", disp), disp)
+        }
+        return Result("I can integrate polynomials, sin x, cos x, eˣ, 1/x offline.", "∫", e0, listOf("Try: integral of 3x^2"), "—")
+    }
+
+    private fun coef(s: String): Double = when {
+        s.isEmpty() || s == "+" -> 1.0
+        s == "-" -> -1.0
+        else -> s.toDoubleOrNull() ?: 1.0
+    }
+
     private fun normalizeExpr(lower: String): String? {
         var s = lower
             .replace("what is", "")
             .replace("calculate", "")
-            .replace("compute", "")
-            .replace("solve", "")
-            .replace("equals", "=")
-            .replace("equal to", "=")
+            .replace("×", "*")
+            .replace("÷", "/")
             .replace("plus", "+")
             .replace("minus", "-")
             .replace("times", "*")
             .replace("multiplied by", "*")
-            .replace("x", "*") // careful - only for pure digit expressions handled below
             .replace("divided by", "/")
-            .replace("over", "/")
-            .replace("point", ".")
             .replace(" ", "")
             .trim()
-        // Only accept if looks like expression
-        if (!s.matches(Regex("""[\d.+\-*/()^πpie]+"""))) {
-            // try without replacing x as multiply for cases like already * 
-            s = lower
-                .replace("what is", "")
-                .replace("calculate", "")
-                .replace("plus", "+")
-                .replace("minus", "-")
-                .replace("times", "*")
-                .replace("multiplied by", "*")
-                .replace("divided by", "/")
-                .replace(" ", "")
-            // replace standalone x between numbers as *
-            s = s.replace(Regex("""(\d)\s*[x×]\s*(\d)"""), "$1*$2")
-            s = s.replace("×", "*").replace("÷", "/")
-        }
-        s = s.replace("π", "pi")
-        // expand constants
-        for ((k, v) in CONST) {
-            if (k.length == 1 && k != "e" && k != "g") continue
-            s = s.replace(k, v.toString())
-        }
-        s = s.replace("pi", Math.PI.toString())
-        // only digits and ops
+        s = s.replace(Regex("""(\d)[x×*](\d)"""), "$1*$2")
         if (!s.matches(Regex("""[\d.+\-*/()^eE]+"""))) return null
         if (!s.any { it.isDigit() }) return null
         return s
     }
-
-    private fun prettyExpr(e: String) = e
 
     private fun eval(expr: String): Double = evalShunting(expr)
 
@@ -413,10 +611,7 @@ object OfflineMath {
                     prevOp = false
                 }
                 c == '+' || c == '-' || c == '*' || c == '/' || c == '^' -> {
-                    if (c == '-' && prevOp) {
-                        // unary minus
-                        output.addLast(0.0)
-                    }
+                    if (c == '-' && prevOp) output.addLast(0.0)
                     while (ops.isNotEmpty() && ops.last() != '(' &&
                         (prec(ops.last()) > prec(c) || (prec(ops.last()) == prec(c) && c != '^'))
                     ) apply()
@@ -430,147 +625,30 @@ object OfflineMath {
         return output.single()
     }
 
-
-    private fun differentiate(raw: String): Result? {
-        val e = raw.lowercase()
-            .replace(" ", "")
-            .replace("squared", "^2")
-            .replace("cubed", "^3")
-            .replace("times", "*")
-        // ax^n
-        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
-            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "+" || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDouble() }
-            val n = it.groupValues[2].toDouble()
-            val newA = a * n
-            val newN = n - 1
-            val disp = when {
-                newN == 0.0 -> formatNum(newA)
-                newN == 1.0 -> "${formatNum(newA)}x"
-                else -> "${formatNum(newA)}x^${formatNum(newN)}"
-            }
-            return Result(
-                "The derivative is ${speakPoly(disp)}",
-                "d/dx [${formatNum(a)}x^${formatNum(n)}] = $disp",
-                listOf("Power rule: d/dx [xⁿ] = n·xⁿ⁻¹", "d/dx = $disp"),
-            )
-        }
-        Regex("""^(-?\d*\.?\d*)x$""").find(e)?.let {
-            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDoubleOrNull() ?: 1.0 }
-            return Result("The derivative is ${speakNumber(a)}", "d/dx [${formatNum(a)}x] = ${formatNum(a)}", listOf("d/dx [ax] = a = ${formatNum(a)}"))
-        }
-        Regex("""^(-?\d+(?:\.\d+)?)$""").find(e)?.let {
-            return Result("The derivative of a constant is zero", "d/dx [${it.groupValues[1]}] = 0", listOf("Constant rule → 0"))
-        }
-        // sin x, cos x, e^x, ln x
-        when {
-            e.contains("sinx") || e == "sin" -> return Result("Derivative of sine x is cosine x", "d/dx [sin x] = cos x", listOf("d/dx sin x = cos x"))
-            e.contains("cosx") || e == "cos" -> return Result("Derivative of cosine x is negative sine x", "d/dx [cos x] = −sin x", listOf("d/dx cos x = −sin x"))
-            e.contains("tanx") || e == "tan" -> return Result("Derivative of tangent x is secant squared x", "d/dx [tan x] = sec² x", listOf("d/dx tan x = sec² x"))
-            e.contains("e^x") || e == "expx" -> return Result("Derivative of e to the x is e to the x", "d/dx [eˣ] = eˣ", listOf("d/dx eˣ = eˣ"))
-            e.contains("lnx") || e.contains("logx") -> return Result("Derivative of ln x is one over x", "d/dx [ln x] = 1/x", listOf("d/dx ln x = 1/x"))
-        }
-        return Result(
-            "I can differentiate polynomials like 3x^4, ax, constants, sin x, cos x, e^x, and ln x offline.",
-            "Try: derivative of 3x^4",
-            listOf("Supported: axⁿ, sin, cos, tan, eˣ, ln x"),
-        )
-    }
-
-    private fun integrate(raw: String): Result? {
-        val e = raw.lowercase()
-            .replace(" ", "")
-            .replace("squared", "^2")
-            .replace("cubed", "^3")
-            .replace("dx", "")
-            .replace("times", "*")
-        Regex("""^(-?\d*\.?\d*)x\^(\d+)$""").find(e)?.let {
-            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "+" || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDouble() }
-            val n = it.groupValues[2].toDouble()
-            val newN = n + 1
-            val newA = a / newN
-            val disp = "${formatNum(newA)}x^${formatNum(newN)} + C"
-            return Result(
-                "The integral is ${speakPoly(disp)}",
-                "∫ ${formatNum(a)}x^${formatNum(n)} dx = $disp",
-                listOf("Power rule: ∫ xⁿ dx = xⁿ⁺¹/(n+1) + C", disp),
-            )
-        }
-        Regex("""^(-?\d*\.?\d*)x$""").find(e)?.let {
-            val a = it.groupValues[1].let { s -> if (s.isEmpty() || s == "-") (if (s == "-") -1.0 else 1.0) else s.toDoubleOrNull() ?: 1.0 }
-            val disp = "${formatNum(a / 2)}x² + C"
-            return Result("The integral is ${speakPoly(disp)}", "∫ ${formatNum(a)}x dx = $disp", listOf(disp))
-        }
-        Regex("""^(-?\d+(?:\.\d+)?)$""").find(e)?.let {
-            val a = it.groupValues[1].toDouble()
-            val disp = "${formatNum(a)}x + C"
-            return Result("The integral is ${speakPoly(disp)}", "∫ ${formatNum(a)} dx = $disp", listOf(disp))
-        }
-        when {
-            e.contains("sinx") -> return Result("Integral of sine x is negative cosine x plus C", "∫ sin x dx = −cos x + C", listOf("∫ sin x dx = −cos x + C"))
-            e.contains("cosx") -> return Result("Integral of cosine x is sine x plus C", "∫ cos x dx = sin x + C", listOf("∫ cos x dx = sin x + C"))
-            e.contains("e^x") -> return Result("Integral of e to the x is e to the x plus C", "∫ eˣ dx = eˣ + C", listOf("∫ eˣ dx = eˣ + C"))
-            e.contains("1/x") || e.contains("ln") -> return Result("Integral of one over x is ln absolute x plus C", "∫ 1/x dx = ln|x| + C", listOf("∫ dx/x = ln|x| + C"))
-        }
-        return Result(
-            "I can integrate polynomials like 3x^2, constants, sin x, cos x, e^x, and 1/x offline.",
-            "Try: integral of 3x^2",
-            listOf("Supported: axⁿ, sin, cos, eˣ, 1/x"),
-        )
-    }
-
-    private fun limitAt(raw: String, a: Double): Result? {
-        // Simple polynomial evaluation at a
-        val e = normalizeExpr(raw.replace("x", "($a)")) ?: return null
-        return try {
-            val v = eval(e)
-            Result(
-                "Limit as x approaches ${speakNumber(a)} is ${speakNumber(v)}",
-                "lim x→${formatNum(a)} = ${formatNum(v)}",
-                listOf("Substitute x = ${formatNum(a)}", "Value = ${formatNum(v)}"),
-            )
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun speakPoly(s: String): String = s
-        .replace("^", " to the power ")
-        .replace("²", " squared")
-        .replace("³", " cubed")
-        .replace("+ C", " plus C")
-        .replace("+C", " plus C")
-
-
     fun formatNum(v: Double): String {
         if (v.isNaN()) return "undefined"
-        if (v.isInfinite()) return if (v > 0) "∞" else "-∞"
+        if (v.isInfinite()) return if (v > 0) "∞" else "−∞"
         if (abs(v - v.toLong()) < 1e-9 && abs(v) < 1e15) return v.toLong().toString()
-        val s = String.format(java.util.Locale.US, "%.8f", v).trimEnd('0').trimEnd('.')
-        return s
+        return String.format(java.util.Locale.US, "%.8f", v).trimEnd('0').trimEnd('.')
     }
 
-    /** Speak decimals as “two point five”. */
     fun speakNumber(v: Double): String {
         if (v.isNaN()) return "undefined"
         if (v.isInfinite()) return if (v > 0) "infinity" else "negative infinity"
         val neg = v < 0
-        val abs = abs(v)
-        if (abs(abs - abs.toLong()) < 1e-9 && abs < 1e12) {
-            val n = abs.toLong()
-            return (if (neg) "negative " else "") + n.toString()
+        val absv = abs(v)
+        if (abs(absv - absv.toLong()) < 1e-9 && absv < 1e12) {
+            return (if (neg) "negative " else "") + absv.toLong().toString()
         }
-        val s = formatNum(abs)
+        val s = formatNum(absv)
         val parts = s.split('.')
-        val whole = parts[0]
-        val frac = parts.getOrNull(1)
-        val spoken = buildString {
+        return buildString {
             if (neg) append("negative ")
-            append(whole)
-            if (!frac.isNullOrEmpty()) {
+            append(parts[0])
+            if (parts.size > 1) {
                 append(" point ")
-                append(frac.toCharArray().joinToString(" ") { it.toString() })
+                append(parts[1].toCharArray().joinToString(" "))
             }
         }
-        return spoken
     }
 }
