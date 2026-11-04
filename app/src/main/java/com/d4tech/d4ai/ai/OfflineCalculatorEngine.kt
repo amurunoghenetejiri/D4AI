@@ -69,6 +69,28 @@ object OfflineCalculatorEngine {
         // --- Conversion ---
         convert(lower)?.let { return it }
 
+        // --- Integer factors ("factors of 36") ---
+        Regex("""(?i)factors\s+of\s+(\d{1,7})""").find(lower)?.let {
+            val n = it.groupValues[1].toLong()
+            if (n > 0) {
+                val divs = (1..n).filter { d -> n % d == 0L }
+                val shown = divs.take(24).joinToString(", ")
+                val more = if (divs.size > 24) " …" else ""
+                return CalcResult(
+                    "The factors of ${speak(n.toDouble())} are $shown$more.",
+                    "factors($n)",
+                    divs.joinToString(", "),
+                    listOf("Divide $n by every number up to √$n", "Factors: ${divs.joinToString(", ")}"),
+                )
+            }
+        }
+
+        // --- Factorization (polynomials) ---
+        factorize(lower)?.let { return it }
+
+        // --- Matrices ---
+        matrix(lower)?.let { return it }
+
         // --- Linear single variable: 2x+3=0 or solve 2x+3=0 ---
         linearOneVar(lower)?.let { return it }
 
@@ -81,12 +103,22 @@ object OfflineCalculatorEngine {
         // --- Quadratic ---
         quadratic(lower)?.let { return it }
 
-        // --- Derivative / integral ---
+        // --- Derivative / integral (full polynomials, definite integrals) ---
         Regex("""(?i)(?:differentiate|derivative(?:\s+of)?|d/dx|dy/dx)\s*(?:of\s*)?(.+)""").find(lower)?.let {
-            return differentiate(parseNaturalMath(it.groupValues[1]))
+            val expr = it.groupValues[1]
+                .replace(Regex("""(?i)\s*(?:with respect to|wrt)\s*x\s*$"""), "")
+                .trim()
+            return differentiatePoly(expr)
         }
-        Regex("""(?i)(?:integrate|integral(?:\s+of)?)\s*(?:of\s*)?(.+?)(?:\s+d\s*x)?$""").find(lower)?.let {
-            return integrate(parseNaturalMath(it.groupValues[1]))
+        Regex("""(?i)(?:integrate|integral(?:\s+of)?)\s*(?:of\s*)?(.+)""").find(lower)?.let {
+            var expr = it.groupValues[1].trim()
+            var bounds: Pair<Double, Double>? = null
+            Regex("""(?i)\s+from\s+(-?\d+(?:\.\d+)?)\s+to\s+(-?\d+(?:\.\d+)?)\s*$""").find(expr)?.let { bm ->
+                bounds = bm.groupValues[1].toDouble() to bm.groupValues[2].toDouble()
+                expr = expr.substring(0, bm.range.first).trim()
+            }
+            expr = expr.replace(Regex("""(?i)\s*d\s*x\s*$"""), "").trim()
+            return integratePoly(expr, bounds)
         }
 
         // --- Mean ---
