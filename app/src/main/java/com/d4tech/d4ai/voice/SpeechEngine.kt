@@ -119,50 +119,59 @@ class SpeechEngine(
             if (listenAfter) startListening()
             return
         }
-        // Chunk long answers so TTS does not cut out / error mid-sentence
+        // One utterance per clause + silent gaps so full stops / commas are heard as pauses
         val chunks = chunkForTts(clean)
         isSpeaking = true
         onSpeakingChanged(true)
+        try { engine.stop() } catch (_: Exception) {}
         chunks.forEachIndexed { i, chunk ->
             val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            val id = UUID.randomUUID().toString() + "_$i"
+            val id = "d4_" + UUID.randomUUID().toString() + "_$i"
             engine.speak(chunk, mode, null, id)
+            if (i < chunks.size - 1) {
+                val endsSentence = chunk.trimEnd().lastOrNull() in charArrayOf('.', '!', '?')
+                val silenceMs = if (endsSentence) 420L else 220L
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 21) {
+                        engine.playSilentUtterance(silenceMs, TextToSpeech.QUEUE_ADD, id + "_s")
+                    }
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 
-    private fun chunkForTts(text: String, maxLen: Int = 220): List<String> {
-        // Split on punctuation so TTS pauses like a human (full stop, comma, question mark)
+    /**
+     * Split on punctuation; keep each clause as its own speak() call.
+     * Do NOT re-merge into long buffers — that removes natural pauses.
+     */
+    private fun chunkForTts(text: String, maxLen: Int = 180): List<String> {
         val rough = text
-            .replace(Regex("""([.!?])\s*"""), "$1|")
-            .replace(Regex("""([,;:])\s*"""), "$1|")
+            .replace(Regex("""([.!?])\s+"""), "$1|")
+            .replace(Regex("""([,;:])\s+"""), "$1|")
+            .replace(Regex("""\n+"""), "|")
             .split("|")
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-        if (rough.isEmpty()) return listOf(text)
+        if (rough.isEmpty()) return listOf(text.take(maxLen))
         val parts = ArrayList<String>()
-        val buf = StringBuilder()
         for (s in rough) {
-            if (buf.isNotEmpty() && buf.length + s.length + 1 > maxLen) {
-                parts += buf.toString().trim()
-                buf.clear()
-            }
-            if (s.length > maxLen) {
-                if (buf.isNotEmpty()) {
-                    parts += buf.toString().trim()
-                    buf.clear()
-                }
+            if (s.length <= maxLen) {
+                parts += s
+            } else {
                 var i = 0
                 while (i < s.length) {
-                    val end = (i + maxLen).coerceAtMost(s.length)
-                    parts += s.substring(i, end)
+                    var end = (i + maxLen).coerceAtMost(s.length)
+                    if (end < s.length) {
+                        val space = s.lastIndexOf(' ', end)
+                        if (space > i + 40) end = space
+                    }
+                    parts += s.substring(i, end).trim()
                     i = end
+                    while (i < s.length && s[i].isWhitespace()) i++
                 }
-            } else {
-                if (buf.isNotEmpty()) buf.append(' ')
-                buf.append(s)
             }
         }
-        if (buf.isNotEmpty()) parts += buf.toString().trim()
         return parts.ifEmpty { listOf(text.take(maxLen)) }
     }
 

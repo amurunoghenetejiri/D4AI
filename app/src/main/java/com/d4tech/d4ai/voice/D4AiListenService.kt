@@ -81,6 +81,16 @@ class D4AiListenService : Service() {
             .build()
         startForeground(42, notif)
         BubbleOverlay.show(applicationContext)
+        BubbleOverlay.onQuickAction = { cmd ->
+            try {
+                val router = com.d4tech.d4ai.commands.CommandRouter(applicationContext)
+                when (val r = router.handle(cmd)) {
+                    is com.d4tech.d4ai.commands.RouteResult.Spoke -> speech?.speak(r.message, listenAfter = true)
+                    else -> speech?.speak("Okay.", listenAfter = true)
+                }
+            } catch (_: Exception) {
+            }
+        }
         // Speak then open mic — stays in background
         speech.speak(getString(R.string.listening_prompt), listenAfter = true)
         sendBroadcast(Intent("com.d4tech.d4ai.STATUS").putExtra("awake", true))

@@ -742,8 +742,31 @@ class CommandRouter(private val context: Context) {
 
         // --- screen control (accessibility): see, tap, swipe, system actions ---
         when {
-            matchesAny(lower, "read my screen", "what do you see on my screen", "what's on my screen", "whats on my screen", "describe my screen", "what am i looking at", "what can you see") ->
-                return RouteResult.Spoke(D4AiAccessibilityService.readScreen() ?: screenSetupPrompt())
+            matchesAny(
+                lower,
+                "read my screen", "what do you see on my screen", "what's on my screen", "whats on my screen",
+                "describe my screen", "what am i looking at", "what can you see", "magic eye", "see my screen",
+            ) ->
+                return RouteResult.Spoke(
+                    D4AiAccessibilityService.magicEyeContext()
+                        ?: D4AiAccessibilityService.readScreen()
+                        ?: screenSetupPrompt(),
+                )
+            matchesAny(
+                lower,
+                "summarize this", "summarise this", "summarize the screen", "summarise the screen",
+                "summarize what i see", "summarise what i see", "summarize this page", "summarise this page",
+                "summarize this article", "summarise this article",
+            ) ->
+                return RouteResult.Spoke(D4AiAccessibilityService.summarizeScreenOffline() ?: screenSetupPrompt())
+            matchesAny(
+                lower,
+                "where can i click", "where do i click", "where should i click", "where do i tap",
+                "where should i tap", "where can i tap", "how do i leave", "how do i exit",
+                "where to leave", "how to leave this page", "what should i press", "what can i tap",
+                "what buttons are there", "show buttons",
+            ) ->
+                return RouteResult.Spoke(D4AiAccessibilityService.guideWhereToTap() ?: screenSetupPrompt())
             containsAny(lower, "swipe up", "scroll up") ->
                 return RouteResult.Spoke(if (D4AiAccessibilityService.swipe("up")) "Swiped up." else screenSetupPrompt())
             containsAny(lower, "swipe down", "scroll down") ->

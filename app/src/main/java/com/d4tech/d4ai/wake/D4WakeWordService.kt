@@ -273,6 +273,16 @@ class D4WakeWordService : Service() {
         beepAndVibrate()
         startForeground(NOTIF_ID, buildNotif(sleeping = false))
         BubbleOverlay.show(applicationContext)
+        BubbleOverlay.onQuickAction = { cmd ->
+            try {
+                val router = com.d4tech.d4ai.commands.CommandRouter(applicationContext)
+                when (val r = router.handle(cmd)) {
+                    is com.d4tech.d4ai.commands.RouteResult.Spoke -> speech?.speak(r.message, listenAfter = true)
+                    else -> speech?.speak("Okay.", listenAfter = true)
+                }
+            } catch (_: Exception) {
+            }
+        }
         BubbleOverlay.setListening(true)
         // Allow a short command window even if music is playing (next / pause)
         try { speech?.forceListenThroughMusic = true } catch (_: Exception) {}

@@ -79,6 +79,99 @@ class D4AiAccessibilityService : AccessibilityService() {
             return "On $appLabel I can see: $body"
         }
 
+        data class ScreenAction(val label: String, val clickable: Boolean, val hint: String = "")
+
+        /** Structured screen dump for Magic Eye (app name + text + tappable labels). */
+        fun magicEyeContext(maxActions: Int = 18): String? {
+            val svc = instance ?: return null
+            val root = svc.rootInActiveWindow ?: return null
+            val pkg = root.packageName?.toString().orEmpty()
+            val appLabel = try {
+                val pm = svc.applicationContext.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: Exception) {
+                pkg.ifBlank { "this screen" }
+            }
+            val lines = LinkedHashSet<String>()
+            collectText(root, lines, 0)
+            val actions = ArrayList<ScreenAction>()
+            collectActions(root, actions, 0)
+            root.recycleSafe()
+            val textPart = if (lines.isEmpty()) "no readable text"
+            else lines.take(20).joinToString(" · ")
+            val actionPart = if (actions.isEmpty()) "no obvious buttons"
+            else actions.take(maxActions).joinToString(", ") { it.label }
+            return "You are on $appLabel. Visible text: $textPart. Tappable: $actionPart."
+        }
+
+        /** Suggest how to leave or main controls on this screen. */
+        fun guideWhereToTap(): String? {
+            val svc = instance ?: return null
+            val root = svc.rootInActiveWindow ?: return null
+            val pkg = root.packageName?.toString().orEmpty()
+            val appLabel = try {
+                val pm = svc.applicationContext.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: Exception) {
+                pkg.ifBlank { "this screen" }
+            }
+            val actions = ArrayList<ScreenAction>()
+            collectActions(root, actions, 0)
+            root.recycleSafe()
+            if (actions.isEmpty()) {
+                return "On $appLabel I do not see clear buttons. Try saying go back, or enable D4AI in Accessibility if it is off."
+            }
+            val exitWords = listOf(
+                "back", "close", "cancel", "done", "exit", "leave", "home", "x", "dismiss",
+                "not now", "skip", "ok", "got it", "continue", "next", "menu", "more",
+            )
+            val exits = actions.filter { a ->
+                val l = a.label.lowercase()
+                exitWords.any { w -> l == w || l.contains(w) }
+            }
+            val top = actions.take(8).map { it.label }
+            return if (exits.isNotEmpty()) {
+                "On $appLabel, to leave or move on you can try: ${exits.take(5).joinToString(", ") { it.label }}. Other controls: ${top.joinToString(", ")}."
+            } else {
+                "On $appLabel the main things I can tap are: ${top.joinToString(", ")}. Say tap and the name, or say go back."
+            }
+        }
+
+        /** Short offline summary of visible text (no network). */
+        fun summarizeScreenOffline(): String? {
+            val svc = instance ?: return null
+            val root = svc.rootInActiveWindow ?: return null
+            val pkg = root.packageName?.toString().orEmpty()
+            val appLabel = try {
+                val pm = svc.applicationContext.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: Exception) {
+                pkg.ifBlank { "this screen" }
+            }
+            val lines = LinkedHashSet<String>()
+            collectText(root, lines, 0)
+            root.recycleSafe()
+            if (lines.isEmpty()) return "On $appLabel I cannot read text yet."
+            val bullets = lines.take(5).toList()
+            return "Quick look at $appLabel: " + bullets.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString(" ")
+        }
+
+        private fun collectActions(node: AccessibilityNodeInfo?, out: ArrayList<ScreenAction>, depth: Int) {
+            if (node == null || depth > 28 || out.size > 40) return
+            val label = listOfNotNull(
+                node.text?.toString(),
+                node.contentDescription?.toString(),
+                node.hintText?.toString(),
+            ).map { it.trim() }.firstOrNull { it.isNotEmpty() && it.length <= 48 }
+            if (label != null && (node.isClickable || node.isCheckable || node.isFocusable)) {
+                val exists = out.any { it.label.equals(label, ignoreCase = true) }
+                if (!exists) out.add(ScreenAction(label, node.isClickable))
+            }
+            for (i in 0 until node.childCount) {
+                collectActions(node.getChild(i), out, depth + 1)
+            }
+        }
+
         fun globalAction(action: Int): Boolean {
             val svc = instance ?: return false
             return try {
