@@ -129,7 +129,8 @@ class SpeechEngine(
             val id = "d4_" + UUID.randomUUID().toString() + "_$i"
             engine.speak(chunk, mode, null, id)
             if (i < chunks.size - 1) {
-                val endsSentence = chunk.trimEnd().lastOrNull() in charArrayOf('.', '!', '?')
+                val lastCh = chunk.trimEnd().lastOrNull()
+                val endsSentence = lastCh != null && lastCh in charArrayOf('.', '!', '?')
                 val silenceMs = if (endsSentence) 420L else 220L
                 try {
                     if (android.os.Build.VERSION.SDK_INT >= 21) {

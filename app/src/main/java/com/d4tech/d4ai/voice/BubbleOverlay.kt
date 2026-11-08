@@ -224,6 +224,7 @@ object BubbleOverlay {
         chip("Where can I tap?", "where can I tap")
         chip("What do you see?", "read my screen")
         chip("Go back", "go back")
+        chip("YouTube: play Afrobeat", "open youtube, search for afrobeat, play the first")
         root.addView(
             bar,
             FrameLayout.LayoutParams(

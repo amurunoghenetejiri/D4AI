@@ -163,6 +163,142 @@ object AppTaskPlanner {
                 return steps
             }
         }
+
+        // --- Ghost Agent: multi-app & richer flows ---
+
+        // "open WhatsApp, find Destiny, send hi"
+        Regex(
+            """(?:open|enter|go\s+to)\s+whatsapp[, ]+(?:find|search(?:\s+for)?|open)\s+(.+?)(?:[, ]+(?:and\s+)?(?:send|message)\s+(.+))?$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val who = it.groupValues[1].trim()
+            val msg = it.groupValues.getOrNull(2)?.trim().orEmpty()
+            steps += TaskStep(StepType.OPEN_APP, "whatsapp")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "500")
+            steps += TaskStep(StepType.TYPE, who)
+            steps += TaskStep(StepType.WAIT, "900")
+            steps += TaskStep(StepType.TAP_TEXT, who)
+            steps += TaskStep(StepType.WAIT, "900")
+            if (msg.isNotBlank()) {
+                steps += TaskStep(StepType.TYPE, msg)
+                steps += TaskStep(StepType.WAIT, "400")
+                steps += TaskStep(StepType.TAP_TEXT, "Send")
+                steps += TaskStep(StepType.SPEAK, "Opened $who and sent the message.")
+            } else {
+                steps += TaskStep(StepType.SPEAK, "Opened chat with $who.")
+            }
+            return steps
+        }
+
+        // "open YouTube, search for Afrobeat, play the first one"
+        Regex(
+            """(?:open\s+)?youtube[, ]+(?:and\s+)?(?:search(?:\s+for)?|play)\s+(.+?)(?:[, ]+(?:and\s+)?play(?:\s+the)?\s+first.*)?$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
+                .replace(Regex("""(?i)\s+and\s+play.*$"""), "")
+                .trim()
+            steps += TaskStep(StepType.OPEN_APP, "youtube")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "400")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.WAIT, "1600")
+            steps += TaskStep(StepType.PLAY_FIRST)
+            steps += TaskStep(StepType.SPEAK, "Playing $q on YouTube.")
+            return steps
+        }
+
+        // "open Chrome and search for X" / "search X on Chrome"
+        Regex(
+            """(?:open\s+)?chrome[, ]+(?:and\s+)?search(?:\s+for)?\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "chrome")
+            steps += TaskStep(StepType.WAIT, "1600")
+            steps += TaskStep(StepType.TAP_TEXT, "Search or type URL")
+            steps += TaskStep(StepType.WAIT, "400")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.SPEAK, "Searching Chrome for $q.")
+            return steps
+        }
+
+        // "open Instagram and search for X"
+        Regex(
+            """(?:open\s+)?instagram[, ]+(?:and\s+)?search(?:\s+for)?\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "instagram")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "500")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.SPEAK, "Searching Instagram for $q.")
+            return steps
+        }
+
+        // "open TikTok and search for X"
+        Regex(
+            """(?:open\s+)?tiktok[, ]+(?:and\s+)?search(?:\s+for)?\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "tiktok")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "500")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.SPEAK, "Searching TikTok for $q.")
+            return steps
+        }
+
+        // "open Gmail and search for X"
+        Regex(
+            """(?:open\s+)?gmail[, ]+(?:and\s+)?search(?:\s+for)?\s+(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val q = it.groupValues[1].trim()
+            steps += TaskStep(StepType.OPEN_APP, "gmail")
+            steps += TaskStep(StepType.WAIT, "1800")
+            steps += TaskStep(StepType.TAP_TEXT, "Search")
+            steps += TaskStep(StepType.WAIT, "400")
+            steps += TaskStep(StepType.TYPE, q)
+            steps += TaskStep(StepType.PRESS_SEARCH)
+            steps += TaskStep(StepType.SPEAK, "Searching Gmail for $q.")
+            return steps
+        }
+
+        // "open AppA then open AppB" / "open X and then Y"
+        Regex(
+            """^(?:open|launch|start)\s+(.+?)\s+(?:then|and\s+then)\s+(?:open\s+)?(.+)$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            steps += TaskStep(StepType.OPEN_APP, it.groupValues[1].trim())
+            steps += TaskStep(StepType.WAIT, "1500")
+            steps += TaskStep(StepType.OPEN_APP, it.groupValues[2].trim())
+            steps += TaskStep(StepType.SPEAK, "Opened both apps.")
+            return steps
+        }
+
+        // "type X and send" on current screen (WhatsApp chat already open)
+        Regex(
+            """^(?:type|write)\s+(.+?)\s+and\s+send$""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            steps += TaskStep(StepType.TYPE, it.groupValues[1].trim())
+            steps += TaskStep(StepType.WAIT, "300")
+            steps += TaskStep(StepType.TAP_TEXT, "Send")
+            steps += TaskStep(StepType.SPEAK, "Sent.")
+            return steps
+        }
+
+
         // Standalone type / tap on whatever is focused
         Regex("""^(?:type|write)\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
             steps += TaskStep(StepType.TYPE, it.groupValues[1].trim())

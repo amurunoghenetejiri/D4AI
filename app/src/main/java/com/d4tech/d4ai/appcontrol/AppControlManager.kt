@@ -33,10 +33,17 @@ class AppControlManager(private val context: Context) {
         val plan = AppTaskPlanner.plan(input)
         if (plan.isEmpty()) return ""
         val log = StringBuilder()
+        val total = plan.count { it.type != StepType.WAIT && it.type != StepType.SPEAK }
+        var n = 0
         for (step in plan) {
+            if (step.type != StepType.WAIT && step.type != StepType.SPEAK) {
+                n++
+                log.append("Step $n of $total: ")
+            }
             val msg = runStep(step)
             if (msg.isNotBlank()) log.append(msg).append(' ')
-            Thread.sleep(700)
+            // Slightly longer gap so UI can settle between taps
+            if (step.type != StepType.WAIT) Thread.sleep(550)
         }
         val result = log.toString().trim().ifBlank { "Done." }
         memory.logCommand(input, result, true)
