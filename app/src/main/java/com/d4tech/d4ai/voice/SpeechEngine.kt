@@ -111,12 +111,12 @@ class SpeechEngine(
     fun speak(text: String, listenAfter: Boolean = true) {
         wantListen = listenAfter
         speakListenAfter = listenAfter
-        val clean = normalize(text).replace(Regex("(?i)404(\\s*error)?"), " ").trim()
+        val clean = prepareForSpeech(text)
         if (clean.isBlank()) {
             if (listenAfter) startListening()
             return
         }
-        lastSpoken = clean
+        lastSpoken = normalize(text)
         stopListening()
         val engine = tts
         if (engine == null || !ttsReady) {
@@ -343,6 +343,15 @@ class SpeechEngine(
             if (overlap >= 2 && overlap >= spoken.size * 2 / 3) return true
         }
         return false
+    }
+
+    /** Clean for TTS but KEEP . , ! ? ; : so the speaker can pause. */
+    private fun prepareForSpeech(s: String): String {
+        return s
+            .replace(Regex("(?i)404(\\s*error)?"), " ")
+            .replace(Regex("[*_#`~\\[\\]{}<>|]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
     }
 
     private fun normalize(s: String): String {
