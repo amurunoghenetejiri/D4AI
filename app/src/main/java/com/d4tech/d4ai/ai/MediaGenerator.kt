@@ -68,7 +68,7 @@ object MediaGenerator {
             listOf("animated", "animation", "3d", "pixar", "render").any { l.contains(it) } ->
                 ", cinematic 3d render, octane render, highly detailed, soft lighting"
             else ->
-                ", ultra realistic photo, 8k resolution, sharp focus, highly detailed skin texture, cinematic lighting, professional DSLR photography, natural colors, masterpiece"
+                ", ultra realistic photograph, 4k uhd, extremely sharp focus, crystal clear detail, highly detailed skin texture, cinematic lighting, professional DSLR, natural colors, masterpiece, no watermark, no text overlay"
         }
         return if (base.contains("ultra realistic", ignoreCase = true) || base.contains("masterpiece", ignoreCase = true)) {
             base
@@ -92,35 +92,57 @@ object MediaGenerator {
         val q0 = URLEncoder.encode(userPrompt.trim(), "UTF-8")
         val seed = Random.nextInt(1, 1_000_000_000)
         val model = selectModel(userPrompt)
-        // NO model= / enhance= on free tier (those return 402). Plain prompt URLs work.
+        // Free tier: nologo=true + private + high res. Avoid model=/enhance= (402).
         return listOf(
+            "https://image.pollinations.ai/prompt/$q1?width=1280&height=1600&nologo=true&private=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true&private=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q0?width=1280&height=1600&nologo=true&private=true&seed=$seed",
             "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true&seed=$seed",
             "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true&seed=$seed",
             "https://image.pollinations.ai/prompt/$q1?width=1024&height=1024&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q0?nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q1",
-            "https://image.pollinations.ai/prompt/$q0",
-            "https://pollinations.ai/p/$q1",
-            "https://pollinations.ai/p/$q0",
-            // Last resort — may 402 without key
-            "https://image.pollinations.ai/prompt/$q1?model=flux&width=1024&height=1280&nologo=true&seed=$seed",
         )
     }
 
+    /**
+     * Removes pollinations.ai logo (bottom-right / bottom strip) and applies
+     * a tiny subtle D4AI mark only.
+     */
     fun addD4AIWatermark(bitmap: Bitmap): Bitmap {
-        val out = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return bitmap
+        // Crop bottom ~5% where Pollinations stamps its caption
+        val cropBottom = (bitmap.height * 0.052f).toInt().coerceIn(28, 96)
+        val cropped = try {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, (bitmap.height - cropBottom).coerceAtLeast(1))
+        } catch (_: Exception) {
+            bitmap
+        }
+        val out = cropped.copy(Bitmap.Config.ARGB_8888, true) ?: return cropped
         val canvas = Canvas(out)
+        // Cover residual bottom-right logo area with a soft edge blend
+        val coverH = (out.height * 0.04f).toInt().coerceIn(18, 56)
+        val coverW = (out.width * 0.28f).toInt().coerceIn(80, out.width / 2)
+        val coverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            // sample near-edge color for a soft cover
+            val sampleX = (out.width - 4).coerceAtLeast(0)
+            val sampleY = (out.height - coverH - 2).coerceAtLeast(0)
+            color = try { out.getPixel(sampleX, sampleY) } catch (_: Exception) { Color.BLACK }
+        }
+        canvas.drawRect(
+            (out.width - coverW).toFloat(),
+            (out.height - coverH).toFloat(),
+            out.width.toFloat(),
+            out.height.toFloat(),
+            coverPaint,
+        )
+        // Tiny D4AI only — very soft
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(90, 255, 255, 255)
-            textSize = (out.width * 0.028f).coerceIn(22f, 42f)
+            color = Color.argb(70, 255, 255, 255)
+            textSize = (out.width * 0.022f).coerceIn(16f, 28f)
             isFakeBoldText = true
-            setShadowLayer(4f, 1f, 1f, Color.argb(120, 0, 0, 0))
+            setShadowLayer(3f, 1f, 1f, Color.argb(90, 0, 0, 0))
         }
         val label = "D4AI"
-        val pad = out.width * 0.03f
-        val x = out.width - paint.measureText(label) - pad
-        val y = out.height - pad
-        canvas.drawText(label, x, y, paint)
+        val pad = out.width * 0.025f
+        canvas.drawText(label, out.width - paint.measureText(label) - pad, out.height - pad * 0.6f, paint)
         return out
     }
 
@@ -158,15 +180,16 @@ object MediaGenerator {
                                 return@use
                             }
                         // Cap memory on low-end devices
-                        if (bmp.width > 1280 || bmp.height > 1600) {
-                            val scale = minOf(1280f / bmp.width, 1600f / bmp.height)
+                        // Keep high resolution — only shrink extreme sizes to avoid OOM
+                        if (bmp.width > 2048 || bmp.height > 2560) {
+                            val scale = minOf(1920f / bmp.width, 2400f / bmp.height)
                             val nw = (bmp.width * scale).toInt().coerceAtLeast(1)
                             val nh = (bmp.height * scale).toInt().coerceAtLeast(1)
                             bmp = Bitmap.createScaledBitmap(bmp, nw, nh, true)
                         }
                         bmp = addD4AIWatermark(bmp)
                         val outBytes = ByteArrayOutputStream().use { bos ->
-                            bmp.compress(Bitmap.CompressFormat.JPEG, 95, bos)
+                            bmp.compress(Bitmap.CompressFormat.JPEG, 98, bos)
                             bos.toByteArray()
                         }
                         val cache = File(context.cacheDir, "d4ai_last_${System.currentTimeMillis()}.jpg")

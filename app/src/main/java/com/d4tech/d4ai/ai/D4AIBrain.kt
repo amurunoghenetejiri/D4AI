@@ -216,7 +216,7 @@ Formatting:
         val seed = Random.nextInt(1, Int.MAX_VALUE)
         // Free-safe URL (model/enhance often 402 without paid key)
         return "https://image.pollinations.ai/prompt/$q" +
-            "?width=1024&height=1280&nologo=true&seed=$seed"
+            "?width=1280&height=1600&nologo=true&private=true&seed=$seed"
     }
 
     fun selectImageModel(prompt: String): String {
@@ -232,7 +232,7 @@ Formatting:
 
     fun enhanceImagePrompt(prompt: String): String {
         val suffix =
-            ", ultra realistic photo, 8k, sharp focus, highly detailed, cinematic lighting, DSLR masterpiece"
+            ", ultra realistic photograph, 4k uhd, extremely sharp focus, crystal clear, highly detailed, cinematic lighting, professional DSLR masterpiece, no watermark, no text"
         val base = prompt.trim().trimEnd(',', '.', ' ')
         return if (base.contains("ultra realistic", ignoreCase = true)) base else base + suffix
     }
