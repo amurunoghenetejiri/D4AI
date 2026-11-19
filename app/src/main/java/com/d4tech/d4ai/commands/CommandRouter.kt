@@ -64,6 +64,18 @@ class CommandRouter(private val context: Context) {
                 MemoryStore.logCommand(raw.trim().take(180))
                 return RouteResult.Spoke(joined)
             }
+            // Multi-step app control FIRST (open WhatsApp → search → send, etc.)
+            // Must run before UniversalCommands, which only opens a single app.
+            if (AppTaskPlanner.plan(raw).size > 1) {
+                return try {
+                    val spoken = appCtrl.executeNatural(raw)
+                    MemoryStore.logCommand(raw.trim().take(180))
+                    if (spoken.isNotBlank()) RouteResult.Spoke(spoken) else RouteResult.Spoke("Done.")
+                } catch (e: Exception) {
+                    RouteResult.Spoke("Command failed: ${e.message}")
+                }
+            }
+
             // Universal 75-style commands
             UniversalCommands.tryHandle(context, raw)?.let {
                 MemoryStore.logCommand(raw.trim().take(180))
@@ -90,8 +102,10 @@ class CommandRouter(private val context: Context) {
                 val markers = listOf(
                     "generate an image of", "generate image of", "create an image of", "create image of",
                     "draw an image of", "draw a picture of", "draw me", "make an image of", "make a picture of",
-                    "generate a picture of", "create a picture of", "image of", "picture of",
-                    "generate image", "create image", "draw image", "make image",
+                    "generate a picture of", "create a picture of", "generate a photo of", "create a photo of",
+                    "make a photo of", "image of", "picture of", "photo of",
+                    "generate image", "create image", "draw image", "make image", "generate photo", "create photo",
+                    "ai image", "imagine",
                 )
                 for (m in markers) {
                     val idx = l.indexOf(m)

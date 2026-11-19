@@ -30,7 +30,12 @@ object UniversalCommands {
         Regex("""^(?:open|launch|start|go to|bring up|show me)\s+(.+?)(?:\s+app)?$""", RegexOption.IGNORE_CASE)
             .find(text)?.let {
                 val name = it.groupValues[1].trim()
+                val nl = name.lowercase()
+                // Leave multi-step phrases for AppTaskPlanner
                 if (name.contains(" and ") || name.contains(" settings")) return@let
+                if (nl.contains("search") || nl.contains("send") || nl.contains("message") ||
+                    nl.contains("find") || nl.contains("type") || nl.contains("tap")
+                ) return@let
                 return sys.openApp(name)
             }
 

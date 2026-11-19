@@ -76,7 +76,18 @@ class AppControlManager(private val context: Context) {
                         return "Accessibility is on but not connected yet. Open D4AI once, then try the command again."
                     }
                 }
-                val ok = tapSync(step.arg)
+                val labels = when (step.arg.lowercase()) {
+                    "search" -> listOf("Search", "search", "Search…", "Search...", "New chat", "New Chat")
+                    "send" -> listOf("Send", "send", "SEND")
+                    else -> listOf(step.arg)
+                }
+                var ok = false
+                for (label in labels) {
+                    if (tapSync(label)) {
+                        ok = true
+                        break
+                    }
+                }
                 if (ok) "Tapped ${step.arg}." else "Couldn't find ${step.arg} on screen. Say read my screen."
             }
             StepType.TYPE -> {

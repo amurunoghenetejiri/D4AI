@@ -18,39 +18,77 @@ object AppTaskPlanner {
         val lower = text.lowercase()
         val steps = ArrayList<TaskStep>()
 
-        // Chain: enter/open WhatsApp … search … send …
-        if ((lower.contains("whatsapp") || lower.contains("whats app")) &&
-            (lower.contains("search") || lower.contains("send") || lower.contains("message") || lower.contains("enter"))
-        ) {
-            steps += TaskStep(StepType.OPEN_APP, "whatsapp")
-            steps += TaskStep(StepType.WAIT, "1800")
-            steps += TaskStep(StepType.CLOSE_POPUP)
+        // Chain: open WhatsApp → search contact → open chat → type → send
+        // Examples: "open whatsapp search for meta ai and send hi"
+        //           "whatsapp find destiny send good morning"
+        if (lower.contains("whatsapp") || lower.contains("whats app")) {
+            val multi = lower.contains("search") || lower.contains("send") ||
+                lower.contains("message") || lower.contains("find") ||
+                lower.contains("chat") || lower.contains("open") || lower.contains("enter")
+            if (multi) {
+                steps += TaskStep(StepType.OPEN_APP, "whatsapp")
+                steps += TaskStep(StepType.WAIT, "2200")
+                steps += TaskStep(StepType.CLOSE_POPUP)
 
-            // search for X
-            Regex("""search(?:\s+for)?\s+([a-zA-Z0-9 _]+?)(?:\s+enter|\s+send|\s+open|$)""", RegexOption.IGNORE_CASE)
-                .find(text)?.let {
-                    val who = it.groupValues[1].trim()
+                // Who to open (search for X / find X / chat with X)
+                var who = ""
+                Regex(
+                    """(?:search(?:\s+for)?|find|open|chat(?:\s+with)?)\s+(.+?)(?:\s+and\s+|\s+then\s+|\s+send\b|\s+message\b|$)""",
+                    RegexOption.IGNORE_CASE,
+                ).find(text)?.let { m ->
+                    who = m.groupValues[1].trim()
+                        .replace(Regex("""(?i)\bwhatsapp\b"""), "")
+                        .replace(Regex("""(?i)^(open|enter)\s+"""), "")
+                        .trim()
+                }
+                // "whatsapp destiny send hi" without search keyword
+                if (who.isBlank()) {
+                    Regex(
+                        """whatsapp(?:\s+app)?\s+(.+?)\s+(?:send|message)\s+""",
+                        RegexOption.IGNORE_CASE,
+                    ).find(text)?.let { who = it.groupValues[1].trim() }
+                }
+                if (who.isNotBlank() && who.length < 48) {
                     steps += TaskStep(StepType.TAP_TEXT, "Search")
-                    steps += TaskStep(StepType.WAIT, "500")
+                    steps += TaskStep(StepType.WAIT, "600")
                     steps += TaskStep(StepType.TYPE, who)
-                    steps += TaskStep(StepType.WAIT, "900")
+                    steps += TaskStep(StepType.WAIT, "1100")
                     steps += TaskStep(StepType.TAP_TEXT, who)
-                    steps += TaskStep(StepType.WAIT, "800")
+                    steps += TaskStep(StepType.WAIT, "1000")
                 }
 
-            // send message body: "send dad good morning" or "send good morning"
-            Regex("""send(?:\s+(?:to\s+)?[a-zA-Z0-9 _]+)?\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
-                var msg = it.groupValues[1].trim()
-                // strip trailing contact if duplicated
-                msg = msg.replace(Regex("""^(?:dad|daddy|mom|mum|mama)\s+""", RegexOption.IGNORE_CASE), "")
-                if (msg.isNotBlank()) {
-                    steps += TaskStep(StepType.TYPE, msg)
-                    steps += TaskStep(StepType.WAIT, "400")
-                    steps += TaskStep(StepType.TAP_TEXT, "Send")
-                    steps += TaskStep(StepType.SPEAK, "Sent.")
+                // Message body after send / message
+                var msg = ""
+                Regex(
+                    """(?:\bsend\b|\bmessage\b)(?:\s+(?:to\s+)?[\w .]+?)?\s+(.+)$""",
+                    RegexOption.IGNORE_CASE,
+                ).find(text)?.let { m ->
+                    msg = m.groupValues[1].trim()
+                    // strip "hi" style messages shouldn't strip contact names already used
+                    msg = msg.replace(Regex("""(?i)^(to\s+)?[\w .]{1,30}\s+saying\s+"""), "")
                 }
+                // "and send hi" / "then send hi"
+                Regex("""(?:and|then)\s+send\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+                    msg = it.groupValues[1].trim()
+                }
+                if (msg.isNotBlank()) {
+                    // Avoid typing the whole original command as message
+                    if (msg.lowercase().contains("whatsapp") || msg.lowercase().startsWith("search")) {
+                        Regex("""\bsend\s+(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+                            msg = it.groupValues[1].trim()
+                        }
+                    }
+                    if (msg.isNotBlank() && !msg.lowercase().contains("search for")) {
+                        steps += TaskStep(StepType.TYPE, msg)
+                        steps += TaskStep(StepType.WAIT, "500")
+                        steps += TaskStep(StepType.TAP_TEXT, "Send")
+                        steps += TaskStep(StepType.SPEAK, "Sent $msg.")
+                    }
+                } else if (who.isNotBlank()) {
+                    steps += TaskStep(StepType.SPEAK, "Opened chat with $who.")
+                }
+                if (steps.size > 3) return steps
             }
-            if (steps.size > 3) return steps
         }
 
         // send Hi to John on whatsapp

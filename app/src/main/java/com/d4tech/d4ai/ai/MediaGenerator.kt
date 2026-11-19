@@ -50,14 +50,31 @@ object MediaGenerator {
 
     fun selectModel(userPrompt: String): String {
         val l = userPrompt.lowercase()
-        return if (humanWords.any { l.contains(it) }) "flux-realism" else "flux"
+        return when {
+            listOf("anime", "cartoon", "manga", "animation", "animated", "pixar", "3d render")
+                .any { l.contains(it) } -> "flux"
+            humanWords.any { l.contains(it) } ||
+                listOf("photo", "realistic", "portrait", "selfie").any { l.contains(it) } -> "flux-realism"
+            else -> "flux"
+        }
     }
 
     fun enhancePrompt(userPrompt: String): String {
-        val suffix =
-            ", ultra realistic photo, sharp focus, highly detailed, cinematic lighting, natural colors"
+        val l = userPrompt.lowercase()
         val base = userPrompt.trim().trimEnd(',', '.', ' ')
-        return if (base.contains("ultra realistic", ignoreCase = true)) base else "$base$suffix"
+        val suffix = when {
+            listOf("anime", "cartoon", "manga").any { l.contains(it) } ->
+                ", vibrant anime style, clean lines, highly detailed, masterpiece"
+            listOf("animated", "animation", "3d", "pixar", "render").any { l.contains(it) } ->
+                ", cinematic 3d render, octane render, highly detailed, soft lighting"
+            else ->
+                ", ultra realistic photo, 8k resolution, sharp focus, highly detailed skin texture, cinematic lighting, professional DSLR photography, natural colors, masterpiece"
+        }
+        return if (base.contains("ultra realistic", ignoreCase = true) || base.contains("masterpiece", ignoreCase = true)) {
+            base
+        } else {
+            "$base$suffix"
+        }
     }
 
     /** Build candidate URLs — free path first (no model / no enhance), then quality params. */
@@ -74,14 +91,14 @@ object MediaGenerator {
         val seed = Random.nextInt(1, 1_000_000_000)
         val model = selectModel(userPrompt)
         return listOf(
-            // Most reliable free forms (tested 200 JPEG)
-            "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true",
-            "https://pollinations.ai/p/$q0",
-            // Optional model attempts (may 402 on free tier — tried last)
-            "https://image.pollinations.ai/prompt/$q1?model=$model&width=1024&height=1280&nologo=true&seed=$seed",
+            // Quality first (flux / enhanced), then plain free fallbacks
+            "https://image.pollinations.ai/prompt/$q1?model=$model&width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?model=flux&width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
             "https://image.pollinations.ai/prompt/$q0?model=flux&width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true",
+            "https://pollinations.ai/p/$q0",
         )
     }
 
