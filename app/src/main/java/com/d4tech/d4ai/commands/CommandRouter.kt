@@ -559,13 +559,13 @@ class CommandRouter(private val context: Context) {
         }
 
         // --- alarm (supports "5pm", "5 pm", "5:30pm", "17:00") ---
-        Regex("(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", RegexOption.IGNORE_CASE).find(lower)?.let {
+        Regex("""(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?""", RegexOption.IGNORE_CASE).find(lower)?.let {
             val h = it.groupValues[1].toInt()
             val m = it.groupValues[2].toIntOrNull() ?: 0
             val ap = it.groupValues[3].lowercase()
             return RouteResult.Spoke(setAlarm(h, m, ap))
         }
-        Regex("(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})\s*(am|pm)", RegexOption.IGNORE_CASE).find(lower)?.let {
+        Regex("""(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})\s*(am|pm)""", RegexOption.IGNORE_CASE).find(lower)?.let {
             return RouteResult.Spoke(setAlarm(it.groupValues[1].toInt(), 0, it.groupValues[2].lowercase()))
         }
 
@@ -1393,7 +1393,7 @@ class CommandRouter(private val context: Context) {
             val cleaned = name.replace(Regex("""(?i)\bemoji\b"""), "").trim()
             val found = ArrayList<Pair<String, String>>()
             fun strip(s: String) = s.lowercase()
-                .replace(Regex("[^\p{L}\p{Nd}]+"), "") // letters+digits only (emoji-safe match)
+                .replace(Regex("""[^\p{L}\p{Nd}]+"""), "") // letters+digits only (emoji-safe match)
             val needle = strip(cleaned)
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
