@@ -15,16 +15,11 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
-import android.view.MotionEvent
-import android.widget.TextView
-import android.graphics.Typeface
-import android.util.TypedValue
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
 
 /**
  * Floating D4AI bubble shown over other apps while the assistant is awake —
@@ -47,14 +42,9 @@ object BubbleOverlay {
     private var barsView: BarsView? = null
     private var phase = 0f
 
-    /** Fires with a natural-language command when user taps a HUD chip. */
+    /** Kept for API compatibility; bubble is non-interactive (no HUD). */
     @JvmField
     var onQuickAction: ((String) -> Unit)? = null
-
-    private var hudOpen = false
-    private var panel: LinearLayout? = null
-    private var statusLabel: TextView? = null
-    private var layoutParams: WindowManager.LayoutParams? = null
 
     private val main = Handler(Looper.getMainLooper())
     private var animator: ValueAnimator? = null
@@ -112,48 +102,14 @@ object BubbleOverlay {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                // Classic D4AI: fixed top-center, non-draggable, non-clickable (touches pass through)
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT,
             )
-            params.gravity = Gravity.TOP or Gravity.START
-            params.x = 24
-            params.y = 120
-            layoutParams = params
-
-            // Drag bubble; single tap toggles Magic Eye HUD
-            var downX = 0f
-            var downY = 0f
-            var paramX = 0
-            var paramY = 0
-            var moved = false
-            root.setOnTouchListener { _, ev ->
-                when (ev.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downX = ev.rawX
-                        downY = ev.rawY
-                        paramX = params.x
-                        paramY = params.y
-                        moved = false
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = (ev.rawX - downX).toInt()
-                        val dy = (ev.rawY - downY).toInt()
-                        if (kotlin.math.abs(dx) > 12 || kotlin.math.abs(dy) > 12) moved = true
-                        params.x = paramX + dx
-                        params.y = paramY + dy
-                        try { wm.updateViewLayout(root, params) } catch (_: Exception) {}
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) toggleHud(ctx)
-                        true
-                    }
-                    else -> false
-                }
-            }
-
+            params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            params.y = 40
             wm.addView(root, params)
 
             container = root
@@ -162,95 +118,8 @@ object BubbleOverlay {
             barsView = bars
 
             startLoop()
-            refreshSeeingLabel(ctx)
         } catch (_: Exception) {
         }
-    }
-
-    private fun toggleHud(ctx: Context) {
-        if (hudOpen) {
-            closeHud()
-        } else {
-            openHud(ctx)
-        }
-    }
-
-    private fun closeHud() {
-        val root = container ?: return
-        val p = panel ?: return
-        try { root.removeView(p) } catch (_: Exception) {}
-        panel = null
-        statusLabel = null
-        hudOpen = false
-    }
-
-    private fun openHud(ctx: Context) {
-        val root = container ?: return
-        if (panel != null) return
-        val dens = ctx.resources.displayMetrics.density
-        val bar = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((10 * dens).toInt(), (8 * dens).toInt(), (10 * dens).toInt(), (8 * dens).toInt())
-            setBackgroundColor(0xE6121A2E.toInt())
-            elevation = 12f
-        }
-        val seeing = TextView(ctx).apply {
-            setTextColor(0xFF7DD3FC.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            typeface = Typeface.DEFAULT_BOLD
-            text = seeingStatusText(ctx)
-        }
-        statusLabel = seeing
-        bar.addView(seeing)
-        fun chip(label: String, cmd: String) {
-            val tv = TextView(ctx).apply {
-                text = label
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setPadding((12 * dens).toInt(), (8 * dens).toInt(), (12 * dens).toInt(), (8 * dens).toInt())
-                setBackgroundColor(0xFF1E3A5F.toInt())
-                setOnClickListener {
-                    onQuickAction?.invoke(cmd)
-                    closeHud()
-                }
-            }
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = (6 * dens).toInt() }
-            bar.addView(tv, lp)
-        }
-        chip("Summarize this screen", "summarize this screen")
-        chip("Where can I tap?", "where can I tap")
-        chip("What do you see?", "read my screen")
-        chip("Go back", "go back")
-        chip("YouTube: play Afrobeat", "open youtube, search for afrobeat, play the first")
-        root.addView(
-            bar,
-            FrameLayout.LayoutParams(
-                (200 * dens).toInt(),
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-            ).apply { topMargin = (90 * dens).toInt() },
-        )
-        panel = bar
-        hudOpen = true
-        refreshSeeingLabel(ctx)
-    }
-
-    private fun seeingStatusText(ctx: Context): String {
-        val pkg = try {
-            com.d4tech.d4ai.screen.D4AiAccessibilityService.rootPackageName()
-        } catch (_: Exception) {
-            null
-        }
-        return if (pkg.isNullOrBlank()) "D4AI · Magic Eye"
-        else "Seeing · ${pkg.substringAfterLast('.').take(18)}"
-    }
-
-    fun refreshSeeingLabel(context: Context? = null) {
-        val ctx = context ?: container?.context ?: return
-        statusLabel?.text = seeingStatusText(ctx)
     }
 
     fun setSpeaking(speaking: Boolean) {
@@ -263,7 +132,6 @@ object BubbleOverlay {
     }
 
     fun hide() {
-        closeHud()
         val v = container ?: return
         animator?.cancel()
         animator = null
@@ -271,10 +139,6 @@ object BubbleOverlay {
         logoView = null
         glowView = null
         barsView = null
-        panel = null
-        statusLabel = null
-        layoutParams = null
-        hudOpen = false
         try {
             val wm = v.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             wm.removeView(v)

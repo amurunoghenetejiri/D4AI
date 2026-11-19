@@ -54,6 +54,11 @@ class SpeechEngine(
     /** When true, allow mic even if music is active (e.g. user just woke D4AI to say next). */
     @Volatile var forceListenThroughMusic: Boolean = false
 
+    /** Sequential TTS queue so punctuation pauses actually work on OEM engines. */
+    private val speakQueue = ArrayDeque<Pair<String, Long>>()
+    private var speakChainActive = false
+    private var speakListenAfter = true
+
     fun init(onReady: () -> Unit = {}) {
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
@@ -105,6 +110,7 @@ class SpeechEngine(
 
     fun speak(text: String, listenAfter: Boolean = true) {
         wantListen = listenAfter
+        speakListenAfter = listenAfter
         val clean = normalize(text).replace(Regex("(?i)404(\\s*error)?"), " ").trim()
         if (clean.isBlank()) {
             if (listenAfter) startListening()
@@ -119,34 +125,80 @@ class SpeechEngine(
             if (listenAfter) startListening()
             return
         }
-        // One utterance per clause + silent gaps so full stops / commas are heard as pauses
+        try { engine.stop() } catch (_: Exception) {}
+        speakQueue.clear()
+        speakChainActive = false
+        // Build (chunk, pauseMsAfter) list from punctuation
         val chunks = chunkForTts(clean)
+        for (i in chunks.indices) {
+            val chunk = chunks[i]
+            val lastCh = chunk.trimEnd().lastOrNull()
+            val pause = when {
+                i == chunks.lastIndex -> 0L
+                lastCh == '.' || lastCh == '!' || lastCh == '?' -> 520L
+                lastCh == ',' || lastCh == ';' || lastCh == ':' -> 280L
+                else -> 180L
+            }
+            speakQueue.addLast(chunk to pause)
+        }
         isSpeaking = true
         onSpeakingChanged(true)
-        try { engine.stop() } catch (_: Exception) {}
-        chunks.forEachIndexed { i, chunk ->
-            val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            val id = "d4_" + UUID.randomUUID().toString() + "_$i"
-            engine.speak(chunk, mode, null, id)
-            if (i < chunks.size - 1) {
-                val lastCh = chunk.trimEnd().lastOrNull()
-                val endsSentence = lastCh != null && lastCh in charArrayOf('.', '!', '?')
-                val silenceMs = if (endsSentence) 420L else 220L
-                try {
-                    if (android.os.Build.VERSION.SDK_INT >= 21) {
-                        engine.playSilentUtterance(silenceMs, TextToSpeech.QUEUE_ADD, id + "_s")
-                    }
-                } catch (_: Exception) {
-                }
-            }
+        pumpSpeakQueue()
+    }
+
+    private fun pumpSpeakQueue() {
+        val engine = tts
+        if (engine == null || !ttsReady) {
+            speakQueue.clear()
+            speakChainActive = false
+            isSpeaking = false
+            onSpeakingChanged(false)
+            if (speakListenAfter) startListening()
+            return
         }
+        val next = speakQueue.removeFirstOrNull()
+        if (next == null) {
+            speakChainActive = false
+            isSpeaking = false
+            onSpeakingChanged(false)
+            onSpeakDone()
+            if (speakListenAfter) restartIn(280)
+            return
+        }
+        speakChainActive = true
+        val (chunk, pauseAfter) = next
+        val id = "d4seq_" + System.nanoTime()
+        // One-shot listener for this chunk, then delay, then next
+        try {
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    isSpeaking = true
+                    main.post { onSpeakingChanged(true) }
+                }
+                override fun onDone(utteranceId: String?) {
+                    main.post {
+                        if (pauseAfter > 0L && speakQueue.isNotEmpty()) {
+                            main.postDelayed({ pumpSpeakQueue() }, pauseAfter)
+                        } else {
+                            pumpSpeakQueue()
+                        }
+                    }
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    main.post { pumpSpeakQueue() }
+                }
+            })
+        } catch (_: Exception) {
+        }
+        engine.speak(chunk, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
     /**
-     * Split on punctuation; keep each clause as its own speak() call.
-     * Do NOT re-merge into long buffers — that removes natural pauses.
+     * Split on punctuation; each clause is its own utterance.
+     * Pauses are applied in pumpSpeakQueue (OEM TTS often ignores silent utterances).
      */
-    private fun chunkForTts(text: String, maxLen: Int = 180): List<String> {
+    private fun chunkForTts(text: String, maxLen: Int = 160): List<String> {
         val rough = text
             .replace(Regex("""([.!?])\s+"""), "$1|")
             .replace(Regex("""([,;:])\s+"""), "$1|")
@@ -224,6 +276,12 @@ class SpeechEngine(
 
     fun stopListening() {
         try {
+            speakQueue.clear()
+            speakChainActive = false
+            tts?.stop()
+        } catch (_: Exception) {
+        }
+        try {
             recognizer?.stopListening()
         } catch (_: Exception) {
         }
@@ -232,6 +290,8 @@ class SpeechEngine(
 
     fun shutdown() {
         wantListen = false
+        speakQueue.clear()
+        speakChainActive = false
         try {
             recognizer?.cancel()
             recognizer?.destroy()
