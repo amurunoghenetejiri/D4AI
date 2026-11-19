@@ -259,7 +259,24 @@ class CommandRouter(private val context: Context) {
                         val spoken = parts.joinToString(" ") { intent ->
                             when (intent.action) {
                                 "call_contact", "call" -> callContact(intent.arg)
-                                else -> sysCtrl.execute(intent.action, intent.arg, intent.arg2)
+                                "set_alarm" -> setAlarmFromArg(intent.arg)
+                                "set_timer" -> setTimerFromArg(intent.arg, intent.arg2)
+                                "open_settings" -> {
+                                    // Guard: never open fake settings for command phrases
+                                    val a = intent.arg.lowercase()
+                                    if (a.contains("alarm") || a.contains("timer") || a.contains("call")) {
+                                        if (a.contains("alarm")) setAlarmFromArg(intent.arg)
+                                        else if (a.contains("timer")) setTimerFromArg(intent.arg, intent.arg2)
+                                        else callContact(intent.arg)
+                                    } else {
+                                        sysCtrl.execute(intent.action, intent.arg, intent.arg2)
+                                    }
+                                }
+                                else -> try {
+                                    sysCtrl.execute(intent.action, intent.arg, intent.arg2)
+                                } catch (e: Exception) {
+                                    "Command failed: ${e.message ?: "error"}"
+                                }
                             }
                         }
                         return RouteResult.Spoke(spoken)
@@ -541,12 +558,15 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke(whatsAppMessage(it.groupValues[2].trim(), it.groupValues[1].trim()))
         }
 
-        // --- alarm ---
-        Regex("(?:set\\s+)?(?:an\\s+)?alarm\\s+(?:for\\s+|at\\s+)?(\\d{1,2})(?::|\\s)?(\\d{2})?\\s*(am|pm)?", RegexOption.IGNORE_CASE).find(lower)?.let {
+        // --- alarm (supports "5pm", "5 pm", "5:30pm", "17:00") ---
+        Regex("(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", RegexOption.IGNORE_CASE).find(lower)?.let {
             val h = it.groupValues[1].toInt()
             val m = it.groupValues[2].toIntOrNull() ?: 0
             val ap = it.groupValues[3].lowercase()
             return RouteResult.Spoke(setAlarm(h, m, ap))
+        }
+        Regex("(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})\s*(am|pm)", RegexOption.IGNORE_CASE).find(lower)?.let {
+            return RouteResult.Spoke(setAlarm(it.groupValues[1].toInt(), 0, it.groupValues[2].lowercase()))
         }
 
         // --- volume / mute ---
@@ -1372,7 +1392,9 @@ class CommandRouter(private val context: Context) {
         return try {
             val cleaned = name.replace(Regex("""(?i)\bemoji\b"""), "").trim()
             val found = ArrayList<Pair<String, String>>()
-            val needle = cleaned.lowercase().replace(" ", "")
+            fun strip(s: String) = s.lowercase()
+                .replace(Regex("[^\p{L}\p{Nd}]+"), "") // letters+digits only (emoji-safe match)
+            val needle = strip(cleaned)
             val cursor = context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 arrayOf(
@@ -1387,8 +1409,13 @@ class CommandRouter(private val context: Context) {
                 while (it.moveToNext()) {
                     val num = it.getString(0) ?: continue
                     val disp = it.getString(1) ?: continue
-                    val d = disp.lowercase().replace(" ", "")
-                    if (needle.length >= 2 && (d.contains(needle) || needle.contains(d.take(3)))) {
+                    val d = strip(disp)
+                    if (needle.length >= 2 && (
+                            d.contains(needle) || needle.contains(d) ||
+                            (d.length >= 3 && needle.startsWith(d.take(3))) ||
+                            (needle.length >= 3 && d.startsWith(needle.take(3)))
+                        )
+                    ) {
                         if (found.none { c -> c.second == num }) {
                             found.add(disp to num)
                         }
@@ -1406,8 +1433,19 @@ class CommandRouter(private val context: Context) {
             }
             contactCandidates = found
             pending = PendingAction("call_pick", name)
-            val list = found.mapIndexed { i, (disp, _) -> "${i + 1}. $disp" }.joinToString(". ")
-            "I found several contacts: $list. Say call number 1, or 2, and so on."
+            try {
+                com.d4tech.d4ai.voice.ContactPickerOverlay.show(
+                    context,
+                    found.map { (disp, num) -> disp to num },
+                ) { pickedName, pickedNum ->
+                    pending = null
+                    contactCandidates = emptyList()
+                    placeCall(pickedNum)
+                }
+            } catch (_: Exception) {
+            }
+            val list = found.take(8).mapIndexed { i, (disp, _) -> "${i + 1}. $disp" }.joinToString(". ")
+            "I found several contacts: $list. Tap one on screen, or say number 1, 2, and so on."
         } catch (_: SecurityException) {
             "Contacts permission is required to call by name."
         } catch (e: Exception) {
@@ -1791,6 +1829,40 @@ class CommandRouter(private val context: Context) {
             "Android could not change the flashlight: " + (e.message ?: "permission or hardware unavailable")
         }
     }
+
+    private fun setAlarmFromArg(arg: String): String {
+        // arg formats: "5:0:pm", "5:30:am", "set alarm for 5pm", raw text
+        val raw = arg.trim()
+        Regex("""(\d{1,2}):(\d{1,2}):(\w*)""").find(raw)?.let {
+            return setAlarm(it.groupValues[1].toInt(), it.groupValues[2].toIntOrNull() ?: 0, it.groupValues[3].lowercase())
+        }
+        Regex("""(\d{1,2})(?::(\d{2}))?\s*(am|pm)?""", RegexOption.IGNORE_CASE).find(raw)?.let {
+            return setAlarm(it.groupValues[1].toInt(), it.groupValues[2].toIntOrNull() ?: 0, it.groupValues[3].lowercase())
+        }
+        return "What time? Say, for example: set alarm for 5pm."
+    }
+
+    private fun setTimerFromArg(amount: String, unit: String): String {
+        val n = amount.toIntOrNull() ?: return "How long should the timer be?"
+        val u = unit.lowercase()
+        val seconds = when {
+            u.startsWith("hour") || u.startsWith("hr") -> n * 3600
+            u.startsWith("min") -> n * 60
+            else -> n
+        }.coerceIn(1, 24 * 3600)
+        return try {
+            val i = Intent(AlarmClock.ACTION_SET_TIMER)
+                .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI timer")
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+            "Timer set for $n ${unit.ifBlank { "seconds" }}."
+        } catch (e: Exception) {
+            "Couldn't set timer: ${e.message}"
+        }
+    }
+
     private fun setAlarm(hour: Int, minute: Int, ampm: String): String {
         var h = hour
         if (ampm == "pm" && h < 12) h += 12
@@ -1800,10 +1872,10 @@ class CommandRouter(private val context: Context) {
                 .putExtra(AlarmClock.EXTRA_HOUR, h)
                 .putExtra(AlarmClock.EXTRA_MINUTES, minute)
                 .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI")
-                .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
-            "Setting alarm for %02d:%02d.".format(h, minute)
+            "Alarm set for %02d:%02d.".format(h, minute)
         } catch (e: Exception) {
             "Couldn't set alarm: ${e.message}"
         }

@@ -40,10 +40,17 @@ class AppControlManager(private val context: Context) {
                 n++
                 log.append("Step $n of $total: ")
             }
-            val msg = runStep(step)
-            if (msg.isNotBlank()) log.append(msg).append(' ')
-            // Slightly longer gap so UI can settle between taps
-            if (step.type != StepType.WAIT) Thread.sleep(550)
+            try {
+                val msg = runStep(step)
+                if (msg.isNotBlank()) log.append(msg).append(' ')
+            } catch (e: Exception) {
+                log.append("Step failed (${step.type}): ${e.message ?: "error"}. ")
+                // Continue remaining steps instead of crashing the app
+            }
+            try {
+                if (step.type != StepType.WAIT) Thread.sleep(450)
+            } catch (_: Exception) {
+            }
         }
         val result = log.toString().trim().ifBlank { "Done." }
         memory.logCommand(input, result, true)

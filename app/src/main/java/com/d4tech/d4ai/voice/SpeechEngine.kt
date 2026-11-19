@@ -117,6 +117,7 @@ class SpeechEngine(
             return
         }
         lastSpoken = normalize(text)
+        try { LiveCaptionOverlay.hide() } catch (_: Exception) {}
         stopListening()
         val engine = tts
         if (engine == null || !ttsReady) {
@@ -381,6 +382,12 @@ class SpeechEngine(
         }
 
         override fun onResults(results: Bundle?) {
+            try {
+                val texts = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val best = texts?.firstOrNull()?.trim().orEmpty()
+                if (best.isNotEmpty()) LiveCaptionOverlay.showFinal(context, best)
+            } catch (_: Exception) {}
+
             val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
             val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
             var best: String? = null
@@ -404,7 +411,13 @@ class SpeechEngine(
             }
         }
 
-        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onPartialResults(partialResults: Bundle?) {
+            val texts = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val partial = texts?.firstOrNull()?.trim().orEmpty()
+            if (partial.isNotEmpty()) {
+                try { LiveCaptionOverlay.showPartial(context, partial) } catch (_: Exception) {}
+            }
+        }
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 

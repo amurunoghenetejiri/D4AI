@@ -63,6 +63,35 @@ object CommandParser {
             return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "flashlight_on"))
         }
 
+
+        // Alarm: "set alarm for 5pm", "alarm at 6:30 am"
+        Regex(
+            """(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?""",
+            RegexOption.IGNORE_CASE,
+        ).find(text)?.let {
+            val h = it.groupValues[1]
+            val m = it.groupValues[2].ifBlank { "0" }
+            val ap = it.groupValues[3]
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "set_alarm", "$h:$m:$ap"))
+        }
+        Regex("""(?:set\s+)?(?:an\s+)?alarm\s+(?:for\s+|at\s+)?(\d{1,2})\s*(am|pm)""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "set_alarm", "${it.groupValues[1]}:0:${it.groupValues[2]}"))
+        }
+
+        // Call contact: "call Pleasure", "phone Destiny"
+        Regex("""^(?:call|phone|dial)\s+(?!sim\b)(.+)$""", RegexOption.IGNORE_CASE).find(text)?.let {
+            val who = it.groupValues[1].trim()
+            if (who.replace(Regex("[^0-9+]"), "").length >= 7) {
+                return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "call", who))
+            }
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "call_contact", who))
+        }
+
+        // Timer
+        Regex("""(?:set\s+)?(?:a\s+)?timer\s+(?:for\s+)?(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)?""", RegexOption.IGNORE_CASE).find(text)?.let {
+            return listOf(ParsedIntent(IntentKind.DEVICE_COMMAND, "set_timer", it.groupValues[1], it.groupValues[2]))
+        }
+
         // Battery
         if (lower.contains("battery")) {
             when {
@@ -271,8 +300,10 @@ object CommandParser {
             obj.contains("battery") -> ParsedIntent(IntentKind.DEVICE_COMMAND, "battery_status")
             obj.contains("flashlight") || obj.contains("torch") ->
                 ParsedIntent(IntentKind.DEVICE_COMMAND, "flashlight_on")
+            obj.contains("alarm") -> ParsedIntent(IntentKind.DEVICE_COMMAND, "set_alarm", obj)
             obj in appNouns -> ParsedIntent(IntentKind.DEVICE_COMMAND, "open_app", obj)
-            else -> ParsedIntent(IntentKind.DEVICE_COMMAND, "open_settings", obj)
+            // Never invent settings pages from free text (caused "Opening set alarm for 5pm settings")
+            else -> ParsedIntent(IntentKind.KNOWLEDGE_QUERY, "ask", raw)
         }
     }
 
