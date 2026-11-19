@@ -73,22 +73,22 @@ class AppControlManager(private val context: Context) {
         val lower = input.lowercase()
         var who = contact
         var body = typedMsg
-        Regex("(?:and|then)?\s*send\s+(.+)$", RegexOption.IGNORE_CASE).find(input)?.let {
+        Regex("""(?:and|then)?\s*send\s+(.+)$""", RegexOption.IGNORE_CASE).find(input)?.let {
             body = it.groupValues[1].trim()
         }
-        Regex("search(?:\s+for)?\s+(.+?)(?:\s+and\s+|\s+then\s+|\s+send\b)", RegexOption.IGNORE_CASE)
+        Regex("""search(?:\s+for)?\s+(.+?)(?:\s+and\s+|\s+then\s+|\s+send\b)""", RegexOption.IGNORE_CASE)
             .find(input)?.let { who = it.groupValues[1].trim() }
 
         val result = when {
             sentOk && body.isNotBlank() && who.isNotBlank() ->
                 pick(
-                    "Sent "$body" to $who.",
+                    "Sent '$body' to $who.",
                     "Message sent to $who.",
-                    "Done — "$body" is on its way to $who.",
+                    "Done — '$body' is on its way to $who.",
                     "Okay, sent that to $who.",
                 )
             sentOk && body.isNotBlank() ->
-                pick("Sent "$body".", "Message sent.", "Done, it's sent.")
+                pick("Sent '$body'.", "Message sent.", "Done, it's sent.")
             who.isNotBlank() && openedApp.isNotBlank() ->
                 pick(
                     "Opened $who in ${openedApp.replaceFirstChar { it.uppercase() }}.",
