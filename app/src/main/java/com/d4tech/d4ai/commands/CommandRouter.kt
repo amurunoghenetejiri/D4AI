@@ -60,13 +60,10 @@ class CommandRouter(private val context: Context) {
     /** Public entry point. Every executed command is logged to on-device memory. */
     fun handle(raw: String): RouteResult {
         if (pending == null) {
-            handleMulti(raw)?.let { joined ->
-                MemoryStore.logCommand(raw.trim().take(180))
-                return RouteResult.Spoke(joined)
-            }
-            // Multi-step app control FIRST (open WhatsApp → search → send, etc.)
-            // Must run before UniversalCommands, which only opens a single app.
-            if (AppTaskPlanner.plan(raw).size > 1) {
+            // App multi-step FIRST (WhatsApp search+send). Must beat handleMulti,
+            // which used to split on "and" and only open WhatsApp.
+            val planned = AppTaskPlanner.plan(raw)
+            if (planned.size > 1) {
                 return try {
                     val spoken = appCtrl.executeNatural(raw)
                     MemoryStore.logCommand(raw.trim().take(180))
@@ -74,6 +71,11 @@ class CommandRouter(private val context: Context) {
                 } catch (e: Exception) {
                     RouteResult.Spoke("Command failed: ${e.message}")
                 }
+            }
+
+            handleMulti(raw)?.let { joined ->
+                MemoryStore.logCommand(raw.trim().take(180))
+                return RouteResult.Spoke(joined)
             }
 
             // Universal 75-style commands
@@ -920,6 +922,11 @@ class CommandRouter(private val context: Context) {
         // Never split notes, dictated messages or questions.
         if (all.startsWith("remember") || all.startsWith("note to self") || all.startsWith("make a note")) return null
         if (all.contains("?") || all.contains(" saying ") || all.contains(" that i ")) return null
+        // Keep WhatsApp / in-app multi commands intact (do not split on "and")
+        if ((all.contains("whatsapp") || all.contains("whats app")) &&
+            (all.contains("search") || all.contains("send") || all.contains("message") || all.contains("find"))
+        ) return null
+        if (all.contains("search") && (all.contains("send") || all.contains("message"))) return null
         val parts = t.split(Regex("\\s*(?:,|;|\\band\\s+then\\b|\\bthen\\b|\\bafter\\s+that\\b|\\bafterwards\\b|\\band\\s+next\\b|\\balso\\b|\\band\\b)\\s*", RegexOption.IGNORE_CASE))
             .map { it.trim() }
             .filter { it.length > 2 }

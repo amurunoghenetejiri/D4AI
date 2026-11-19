@@ -79,9 +79,11 @@ object MediaGenerator {
 
     /** Build candidate URLs — free path first (no model / no enhance), then quality params. */
     fun candidateUrls(userPrompt: String): List<String> {
-        // Prefer D4AIBrain sharp URL first, then free fallbacks without model (avoid 402)
+        // Free tier first — model=/enhance= often returns HTTP 402 on Pollinations.
+        // Paid/auth URL from D4AIBrain is tried last only.
+        val free = candidateUrlsLegacy(userPrompt)
         val preferred = try { listOf(D4AIBrain.getImageUrl(userPrompt)) } catch (_: Exception) { emptyList() }
-        return preferred + candidateUrlsLegacy(userPrompt)
+        return free + preferred
     }
 
     private fun candidateUrlsLegacy(userPrompt: String): List<String> {
@@ -90,15 +92,18 @@ object MediaGenerator {
         val q0 = URLEncoder.encode(userPrompt.trim(), "UTF-8")
         val seed = Random.nextInt(1, 1_000_000_000)
         val model = selectModel(userPrompt)
+        // NO model= / enhance= on free tier (those return 402). Plain prompt URLs work.
         return listOf(
-            // Quality first (flux / enhanced), then plain free fallbacks
-            "https://image.pollinations.ai/prompt/$q1?model=$model&width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q1?model=flux&width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&enhance=true&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q0?model=flux&width=1024&height=1280&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true&seed=$seed",
             "https://image.pollinations.ai/prompt/$q0?width=1024&height=1280&nologo=true&seed=$seed",
-            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1280&nologo=true",
+            "https://image.pollinations.ai/prompt/$q1?width=1024&height=1024&nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q0?nologo=true&seed=$seed",
+            "https://image.pollinations.ai/prompt/$q1",
+            "https://image.pollinations.ai/prompt/$q0",
+            "https://pollinations.ai/p/$q1",
             "https://pollinations.ai/p/$q0",
+            // Last resort — may 402 without key
+            "https://image.pollinations.ai/prompt/$q1?model=flux&width=1024&height=1280&nologo=true&seed=$seed",
         )
     }
 

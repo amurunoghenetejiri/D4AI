@@ -214,8 +214,9 @@ Formatting:
         val enhanced = enhanceImagePrompt(prompt)
         val q = URLEncoder.encode(enhanced, "UTF-8")
         val seed = Random.nextInt(1, Int.MAX_VALUE)
+        // Free-safe URL (model/enhance often 402 without paid key)
         return "https://image.pollinations.ai/prompt/$q" +
-            "?model=$model&width=1024&height=1280&enhance=true&nologo=true&seed=$seed"
+            "?width=1024&height=1280&nologo=true&seed=$seed"
     }
 
     fun selectImageModel(prompt: String): String {

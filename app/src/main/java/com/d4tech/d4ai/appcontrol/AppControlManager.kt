@@ -61,7 +61,8 @@ class AppControlManager(private val context: Context) {
         return when (step.type) {
             StepType.OPEN_APP -> {
                 val r = sys.openApp(step.arg)
-                Thread.sleep(1200)
+                // Give WhatsApp / heavy apps time for Accessibility tree
+                Thread.sleep(if (step.arg.lowercase().contains("whatsapp")) 2500 else 1400)
                 "Opening ${step.arg}. $r"
             }
             StepType.WAIT -> {
@@ -88,7 +89,10 @@ class AppControlManager(private val context: Context) {
                         break
                     }
                 }
-                if (ok) "Tapped ${step.arg}." else "Couldn't find ${step.arg} on screen. Say read my screen."
+                if (ok) "Tapped ${step.arg}."
+                else if (!D4AiAccessibilityService.connected())
+                    "Need Accessibility on for D4AI to search and type inside apps. Enable D4AI in Settings → Accessibility."
+                else "Couldn't find ${step.arg} on screen. Say read my screen."
             }
             StepType.TYPE -> {
                 if (!ensureA11y()) return a11yPrompt()
