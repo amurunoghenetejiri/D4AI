@@ -1851,13 +1851,23 @@ class CommandRouter(private val context: Context) {
             else -> n
         }.coerceIn(1, 24 * 3600)
         return try {
-            val i = Intent(AlarmClock.ACTION_SET_TIMER)
-                .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-                .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI timer")
-                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(i)
-            "Timer set for $n ${unit.ifBlank { "seconds" }}."
+            try {
+                val i = Intent(AlarmClock.ACTION_SET_TIMER)
+                    .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                    .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI timer")
+                    .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(i)
+                "Timer set for $n ${unit.ifBlank { "seconds" }}."
+            } catch (_: SecurityException) {
+                val i = Intent(AlarmClock.ACTION_SET_TIMER)
+                    .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                    .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI timer")
+                    .putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(i)
+                "Opened timer for $n ${unit.ifBlank { "seconds" }} — confirm in the clock app."
+            }
         } catch (e: Exception) {
             "Couldn't set timer: ${e.message}"
         }
@@ -1867,17 +1877,37 @@ class CommandRouter(private val context: Context) {
         var h = hour
         if (ampm == "pm" && h < 12) h += 12
         if (ampm == "am" && h == 12) h = 0
-        return try {
-            val i = Intent(AlarmClock.ACTION_SET_ALARM)
-                .putExtra(AlarmClock.EXTRA_HOUR, h)
-                .putExtra(AlarmClock.EXTRA_MINUTES, minute)
-                .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI")
-                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(i)
-            "Alarm set for %02d:%02d.".format(h, minute)
-        } catch (e: Exception) {
-            "Couldn't set alarm: ${e.message}"
+        val label = "Alarm set for %02d:%02d.".format(h, minute)
+        // Prefer silent set; on Transsion/OEM permission denial open clock UI instead
+        fun launch(skipUi: Boolean): Boolean {
+            return try {
+                val i = Intent(AlarmClock.ACTION_SET_ALARM)
+                    .putExtra(AlarmClock.EXTRA_HOUR, h)
+                    .putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                    .putExtra(AlarmClock.EXTRA_MESSAGE, "D4AI")
+                    .putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(i)
+                true
+            } catch (_: SecurityException) {
+                false
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return when {
+            launch(skipUi = true) -> label
+            launch(skipUi = false) -> "$label Opened the clock so you can confirm."
+            else -> {
+                try {
+                    context.startActivity(
+                        Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    "Couldn't set the alarm silently. Opened your clock app — set %02d:%02d there.".format(h, minute)
+                } catch (e: Exception) {
+                    "Couldn't set alarm: ${e.message}"
+                }
+            }
         }
     }
 
