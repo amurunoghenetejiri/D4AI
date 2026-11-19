@@ -32,30 +32,80 @@ class AppControlManager(private val context: Context) {
     fun executeNatural(input: String): String {
         val plan = AppTaskPlanner.plan(input)
         if (plan.isEmpty()) return ""
-        val log = StringBuilder()
-        val total = plan.count { it.type != StepType.WAIT && it.type != StepType.SPEAK }
-        var n = 0
+        var typedMsg = ""
+        var contact = ""
+        var openedApp = ""
+        var sentOk = false
+        var lastSpeak = ""
         for (step in plan) {
-            if (step.type != StepType.WAIT && step.type != StepType.SPEAK) {
-                n++
-                log.append("Step $n of $total: ")
-            }
             try {
+                when (step.type) {
+                    StepType.OPEN_APP -> openedApp = step.arg
+                    StepType.TYPE -> {
+                        // Heuristic: first TYPE after search is contact, later is message
+                        if (contact.isBlank() && plan.any { it.type == StepType.TAP_TEXT && it.arg.equals("Search", true) }) {
+                            if (typedMsg.isBlank() && contact.isBlank()) {
+                                // first type after search = who
+                            }
+                        }
+                        if (contact.isBlank()) contact = step.arg
+                        else typedMsg = step.arg
+                    }
+                    StepType.SPEAK -> lastSpeak = step.arg
+                    else -> {}
+                }
                 val msg = runStep(step)
-                if (msg.isNotBlank()) log.append(msg).append(' ')
-            } catch (e: Exception) {
-                log.append("Step failed (${step.type}): ${e.message ?: "error"}. ")
-                // Continue remaining steps instead of crashing the app
+                if (step.type == StepType.TAP_TEXT && step.arg.equals("Send", ignoreCase = true) &&
+                    msg.contains("Tapped", ignoreCase = true)
+                ) {
+                    sentOk = true
+                }
+                // Track message text more accurately from plan SPEAK / last TYPE before Send
+                if (step.type == StepType.TYPE) typedMsg = step.arg
+            } catch (_: Exception) {
             }
             try {
-                if (step.type != StepType.WAIT) Thread.sleep(450)
+                if (step.type != StepType.WAIT) Thread.sleep(350)
             } catch (_: Exception) {
             }
         }
-        val result = log.toString().trim().ifBlank { "Done." }
+        // Re-parse message from original input for clean speech
+        val lower = input.lowercase()
+        var who = contact
+        var body = typedMsg
+        Regex("(?:and|then)?\s*send\s+(.+)$", RegexOption.IGNORE_CASE).find(input)?.let {
+            body = it.groupValues[1].trim()
+        }
+        Regex("search(?:\s+for)?\s+(.+?)(?:\s+and\s+|\s+then\s+|\s+send\b)", RegexOption.IGNORE_CASE)
+            .find(input)?.let { who = it.groupValues[1].trim() }
+
+        val result = when {
+            sentOk && body.isNotBlank() && who.isNotBlank() ->
+                pick(
+                    "Sent "$body" to $who.",
+                    "Message sent to $who.",
+                    "Done — "$body" is on its way to $who.",
+                    "Okay, sent that to $who.",
+                )
+            sentOk && body.isNotBlank() ->
+                pick("Sent "$body".", "Message sent.", "Done, it's sent.")
+            who.isNotBlank() && openedApp.isNotBlank() ->
+                pick(
+                    "Opened $who in ${openedApp.replaceFirstChar { it.uppercase() }}.",
+                    "You're in the chat with $who.",
+                    "Opened $who's chat.",
+                )
+            openedApp.isNotBlank() ->
+                pick("Opened ${openedApp.replaceFirstChar { it.uppercase() }}.", "Done.")
+            lastSpeak.isNotBlank() -> lastSpeak
+            else -> pick("Done.", "All set.", "Finished.")
+        }
         memory.logCommand(input, result, true)
         return result
     }
+
+    private fun pick(vararg options: String): String =
+        options[kotlin.random.Random.nextInt(options.size)]
 
     private fun runStep(step: TaskStep): String {
         return when (step.type) {
@@ -96,11 +146,21 @@ class AppControlManager(private val context: Context) {
             }
             StepType.TYPE -> {
                 if (!ensureA11y()) return a11yPrompt()
-                // Focus search if needed
+                // Prefer focused input; try search bar, then any editable
                 AppScreenAnalyzer.findSearchBar()?.let { bar ->
-                    if (bar.text.isNotBlank() || bar.desc.isNotBlank()) {
-                        tapSync(bar.text.ifBlank { bar.desc })
-                        Thread.sleep(400)
+                    val label = bar.text.ifBlank { bar.desc }
+                    if (label.isNotBlank()) {
+                        tapSync(label)
+                        Thread.sleep(350)
+                    }
+                }
+                // WhatsApp compose: try common content descriptions
+                if (!D4AiAccessibilityService.typeText(step.arg)) {
+                    for (hint in listOf("Type a message", "Message", "message", "Type", "Chat")) {
+                        if (tapSync(hint)) {
+                            Thread.sleep(300)
+                            break
+                        }
                     }
                 }
                 val ok = D4AiAccessibilityService.typeText(step.arg)

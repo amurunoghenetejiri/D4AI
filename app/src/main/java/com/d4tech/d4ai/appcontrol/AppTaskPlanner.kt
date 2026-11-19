@@ -50,11 +50,13 @@ object AppTaskPlanner {
                 }
                 if (who.isNotBlank() && who.length < 48) {
                     steps += TaskStep(StepType.TAP_TEXT, "Search")
-                    steps += TaskStep(StepType.WAIT, "600")
+                    steps += TaskStep(StepType.WAIT, "700")
                     steps += TaskStep(StepType.TYPE, who)
-                    steps += TaskStep(StepType.WAIT, "1100")
+                    steps += TaskStep(StepType.WAIT, "1200")
+                    steps += TaskStep(StepType.PRESS_SEARCH)
+                    steps += TaskStep(StepType.WAIT, "600")
                     steps += TaskStep(StepType.TAP_TEXT, who)
-                    steps += TaskStep(StepType.WAIT, "1000")
+                    steps += TaskStep(StepType.WAIT, "1600")
                 }
 
                 // Message body after send / message
@@ -79,10 +81,14 @@ object AppTaskPlanner {
                         }
                     }
                     if (msg.isNotBlank() && !msg.lowercase().contains("search for")) {
+                        steps += TaskStep(StepType.WAIT, "400")
+                        steps += TaskStep(StepType.TAP_TEXT, "Type a message")
+                        steps += TaskStep(StepType.WAIT, "350")
                         steps += TaskStep(StepType.TYPE, msg)
                         steps += TaskStep(StepType.WAIT, "500")
                         steps += TaskStep(StepType.TAP_TEXT, "Send")
-                        steps += TaskStep(StepType.SPEAK, "Sent $msg.")
+                        steps += TaskStep(StepType.WAIT, "400")
+                        steps += TaskStep(StepType.SPEAK, "Sent $msg to $who.")
                     }
                 } else if (who.isNotBlank()) {
                     steps += TaskStep(StepType.SPEAK, "Opened chat with $who.")
