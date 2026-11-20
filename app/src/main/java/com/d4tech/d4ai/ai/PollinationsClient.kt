@@ -94,16 +94,16 @@ object PollinationsClient {
                 val j = JSONObject(raw)
                 if (!j.optBoolean("success", true)) return null
                 val result = j.optJSONObject("result") ?: return null
-                // CF chat may return { response: "..." } or { message: { content } } or choices
-                val direct = result.optString("response").orEmpty().trim()
-                if (direct.isNotEmpty()) return direct
-                val msg = result.optJSONObject("message")?.optString("content").orEmpty().trim()
-                if (msg.isNotEmpty()) return msg
+                // Llama 3.3 often returns OpenAI-style choices; Qwen coder returns { response }
                 val choices = result.optJSONArray("choices")
                 if (choices != null && choices.length() > 0) {
                     val c = choices.getJSONObject(0).optJSONObject("message")?.optString("content").orEmpty().trim()
                     if (c.isNotEmpty()) return c
                 }
+                val direct = result.optString("response").orEmpty().trim()
+                if (direct.isNotEmpty() && !direct.startsWith("{")) return direct
+                val msg = result.optJSONObject("message")?.optString("content").orEmpty().trim()
+                if (msg.isNotEmpty()) return msg
                 null
             }
         } catch (_: Exception) {
@@ -197,12 +197,12 @@ object PollinationsClient {
         }
 
         val systemChat =
-            "You are D4AI, a helpful, smart, friendly personal assistant by D4TECH. " +
-                "Answer clearly and in detail when useful. Be natural. " +
-                "You can help with questions, reasoning, and everyday tasks."
+            "You are D4AI, a helpful smart personal assistant by D4TECH (Creating Solutions, Innovating Lives). " +
+                "Answer clearly, naturally, and in useful detail. Never claim to be ChatGPT or Claude. " +
+                "You help with questions, reasoning, school, and everyday tasks."
         val systemCode =
-            "You are D4AI coding assistant. Write clean, working code with short explanations. " +
-                "Prefer complete snippets the user can copy. Use best practices."
+            "You are D4AI coding specialist. Write clean, complete, working code with brief explanations. " +
+                "Prefer copy-paste ready snippets. Use best practices. Never claim to be ChatGPT."
 
         // 1) Coding path → Qwen2.5 Coder 32B on Cloudflare
         if (isCodingRequest(cleaned)) {
