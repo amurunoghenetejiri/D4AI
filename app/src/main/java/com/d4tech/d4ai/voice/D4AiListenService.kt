@@ -115,8 +115,14 @@ class D4AiListenService : Service() {
         }
         when (val result = router.handle(text)) {
             is RouteResult.Spoke -> {
-                if (result.message == "__SLEEP__") {
-                    sleep()
+                if (result.message == "__SLEEP__" || result.message.trim().endsWith("__SLEEP__")) {
+                    val spoken = result.message.replace("__SLEEP__", "").trim()
+                    if (spoken.isNotBlank()) {
+                        speech.speak(spoken, listenAfter = false)
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ sleep() }, 1200L)
+                    } else {
+                        sleep()
+                    }
                 } else {
                     speech.speak(result.message, listenAfter = true)
                 }

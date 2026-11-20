@@ -124,9 +124,11 @@ class MainActivity : AppCompatActivity() {
                 try {
                     when (val r = router.handle(message)) {
                         is RouteResult.Spoke -> {
-                            if (r.message == "__SLEEP__") {
-                                speech.speak("D4AI sleeping", listenAfter = false)
-                                deliver(true, "Going to sleep.")
+                            if (r.message == "__SLEEP__" || r.message.trim().endsWith("__SLEEP__")) {
+                                val spoken = r.message.replace("__SLEEP__", "").trim()
+                                    .ifBlank { "D4AI sleeping" }
+                                speech.speak(spoken, listenAfter = false)
+                                deliver(true, spoken)
                                 startService(
                                     Intent(this@MainActivity, D4AiListenService::class.java)
                                         .setAction(D4AiListenService.ACTION_SLEEP),

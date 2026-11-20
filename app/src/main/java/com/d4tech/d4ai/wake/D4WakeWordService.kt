@@ -330,8 +330,17 @@ class D4WakeWordService : Service() {
         }
         when (val result = r.handle(cleaned)) {
             is RouteResult.Spoke -> {
-                if (result.message == "__SLEEP__") {
-                    goBackToSleep(speak = true)
+                if (result.message == "__SLEEP__" || result.message.trim().endsWith("__SLEEP__")) {
+                    val spoken = result.message.replace("__SLEEP__", "").trim()
+                    if (spoken.isNotBlank()) {
+                        speech?.speak(spoken, listenAfter = false)
+                        // brief pause then sleep
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            goBackToSleep(speak = false)
+                        }, 1200L)
+                    } else {
+                        goBackToSleep(speak = true)
+                    }
                 } else {
                     speech?.speak(result.message, listenAfter = true)
                     resetIdleTimer()

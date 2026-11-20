@@ -369,6 +369,42 @@ class CommandRouter(private val context: Context) {
             return RouteResult.Spoke("__SLEEP__")
         }
 
+        // --- clipboard: write / copy text or code ---
+        run {
+            val clipMatch = Regex(
+                """(?:write|copy|save|put)\s+(.+?)\s+(?:to\s+(?:my\s+)?clipboard|on\s+(?:my\s+)?clipboard)|(?:copy|save)\s+(?:to\s+)?clipboard[:\s]+(.+)""",
+                RegexOption.IGNORE_CASE,
+            ).find(raw)
+            if (clipMatch != null || (
+                lower.contains("clipboard") && (
+                    lower.contains("write") || lower.contains("copy") || lower.contains("save") || lower.contains("put")
+                )
+            )
+            ) {
+                var content = clipMatch?.groupValues?.getOrNull(1)?.ifBlank { null }
+                    ?: clipMatch?.groupValues?.getOrNull(2)?.ifBlank { null }
+                    ?: ""
+                content = content.trim().trim('"', '\'')
+                // Strip trailing "and save" noise
+                content = content.replace(Regex("""(?i)\s+and\s+save.*$"""), "").trim()
+                if (content.isBlank() || content.equals("it", true) || content.equals("this", true)) {
+                    return RouteResult.Spoke("Tell me exactly what to put on the clipboard, for example: copy hello world to clipboard.")
+                }
+                // If user asked for a language sample without body, generate a short snippet offline
+                val pyish = content.matches(Regex("""(?i).*(python|py)\s+(command|code|script|program).*""")) ||
+                    content.matches(Regex("""(?i)^(a\s+)?python\s+(command|code|script)$"""))
+                if (pyish && content.length < 40) {
+                    content = """print("Hello from D4AI")
+# Save this file and run: python script.py
+for i in range(5):
+    print(i)
+"""
+                }
+                return RouteResult.Spoke(copyToClipboard(content))
+            }
+        }
+
+
         // --- set D4AI as the phone's default assistant ---
         if (containsAny(lower, "default assistant", "default ai", "set you as default", "make you default")) {
             return RouteResult.Spoke(openDefaultAssistantSettings())
@@ -916,6 +952,18 @@ class CommandRouter(private val context: Context) {
      * spoken replies. Returns null when the utterance is not clearly a
      * chain of commands (caller then falls back to single-command routing).
      */
+
+    private fun copyToClipboard(text: String): String {
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("D4AI", text))
+            val preview = text.trim().replace("\n", " ").take(80)
+            "Copied to clipboard: $preview"
+        } catch (e: Exception) {
+            "Couldn't access clipboard: ${e.message}"
+        }
+    }
+
     fun handleMulti(raw: String): String? {
         val t = raw.trim()
         val all = t.lowercase()
@@ -939,7 +987,10 @@ class CommandRouter(private val context: Context) {
             when (val r = route(p)) {
                 is RouteResult.Spoke -> {
                     if (r.message == "__SLEEP__") {
-                        return if (replies.isEmpty()) null else replies.joinToString(" ") + " Goodnight."
+                        val prefix = replies.joinToString(" ").trim()
+                        // Keep __SLEEP__ so wake/listen services actually stop the mic
+                        return if (prefix.isEmpty()) "__SLEEP__"
+                        else "$prefix. Going to sleep. __SLEEP__"
                     }
                     replies.add(r.message)
                 }
@@ -970,6 +1021,7 @@ class CommandRouter(private val context: Context) {
             "take picture", "camera", "uninstall", "install", "block ", "notification",
             "go home", "home screen", "my notes", "read my notes", "last command",
             "command history", "settings", "dark mode", "battery saver", "split",
+            "sleep", "clipboard", "copy ", "paste",
         )
         if (hints.any { lower.contains(it) }) return true
         return bareAppOpen(lower) != null
